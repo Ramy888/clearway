@@ -82,4 +82,5 @@ def make_llm_maker(chat: Optional[Callable] = None, tier: str = "super",
         content, _ = chat(tier, build_messages(jam, chair, standard, history, context),
                           max_tokens=2048)
         return parse_ops(content)
+    maker.engine = f"{_llm.DISPLAY[tier]} · Nebius Token Factory"
     return maker

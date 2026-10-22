@@ -35,6 +35,7 @@ export interface LedgerEvent {
   action: string;
   ok: boolean;
   detail: string;
+  engine: string; // what actually did the step: a Nemotron model, Tavily, or deterministic code
   card: Card | null;
 }
 

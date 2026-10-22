@@ -39,6 +39,9 @@ MODELS = {
 }
 
 
+DISPLAY = {"nano": "Nemotron 3 Nano", "super": "Nemotron 3 Super", "ultra": "Nemotron 3 Ultra"}
+
+
 class LLMError(Exception):
     pass
 

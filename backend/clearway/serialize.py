@@ -43,7 +43,7 @@ def _scene(door: DoorSpec, chair: Chair) -> dict:
 
 
 def event_to_dict(e) -> dict:
-    return {"agent": e.agent, "action": e.action, "ok": e.ok, "detail": e.detail,
+    return {"agent": e.agent, "action": e.action, "ok": e.ok, "detail": e.detail, "engine": e.engine,
             "card": asdict(e.card) if e.card is not None else None}
 
 

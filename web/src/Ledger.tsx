@@ -53,6 +53,9 @@ export function Ledger({ events }: { events: LedgerEvent[] }) {
           <div className="ev-head">
             <span className={`badge a-${e.agent.toLowerCase()}`}>{e.agent}</span>
             <span className="ev-action">{ACTION_LABEL[e.action] ?? e.action}</span>
+            {e.engine && (
+              <span className={/Nemotron|Tavily/.test(e.engine) ? "engine model" : "engine"}>{e.engine}</span>
+            )}
           </div>
           <p className="ev-detail">{e.detail}</p>
           {e.card && <Evidence card={e.card} />}

@@ -15,7 +15,7 @@ describe("safeHref (card URLs come from web search — untrusted)", () => {
 import type { LedgerEvent } from "./types";
 
 const power = { width_cm: 70, length_cm: 110, caster_climb_mm: 20, name: "power" };
-const ev = (agent: string, action: string): LedgerEvent => ({ agent, action, ok: true, detail: "", card: null });
+const ev = (agent: string, action: string): LedgerEvent => ({ agent, action, ok: true, detail: "", engine: "", card: null });
 
 describe("chairBox matches the backend footprint exactly", () => {
   it("facing +x: length runs along x, centred like planner._footprint", () => {

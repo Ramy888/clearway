@@ -37,6 +37,16 @@ it("shows the jam, then the refusal before the accepted fix", async () => {
   expect(items[actions.indexOf("refuse")].className).toContain("refuse");
 });
 
+it("names what did each step, without passing code off as a model", async () => {
+  await runIt();
+  const items = within(screen.getByRole("list", { name: /agent ledger/i })).getAllByRole("listitem");
+  const builder = items.find((li) => li.dataset.action === "propose")!;
+  expect(builder.textContent).toContain("cost-greedy stub (code)");
+  expect(builder.textContent).not.toContain("Nemotron");
+  const auditor = items.find((li) => li.dataset.action === "refuse")!;
+  expect(auditor.textContent).toContain("physics re-drive + rules engine (code)");
+});
+
 it("plays the fixed home and gates on human approval", async () => {
   await runIt();
   fireEvent.click(screen.getByRole("tab", { name: /after fix/i }));
