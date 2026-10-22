@@ -9,7 +9,8 @@
   --bad: #e5484d;
   --warn: #f5a524;
   --link: #6cb6ff;
-  --floor: #1a1f26;
+  --floor: #2a2f36;
+  --floor-seam: #20252b;
   --wall: #8b95a1;
   --chair: #30a46c;
   --radius: 10px;
@@ -30,7 +31,8 @@
     --bad: #cd2b31;
     --warn: #ad5700;
     --link: #0b62c4;
-    --floor: #eef1f4;
+    --floor: #ead9c0;
+    --floor-seam: #d6c1a2;
     --wall: #3c444d;
     --chair: #18794e;
     color-scheme: light;
@@ -93,19 +95,52 @@ button:focus-visible, input:focus-visible, select:focus-visible, .card:focus-vis
 
 .twin { margin: 0; }
 .twin svg { width: 100%; height: auto; max-height: min(60vh, 560px); display: block; border-radius: 8px; }
-.floor { fill: var(--floor); }
-.wall { fill: var(--wall); }
-.step { fill: var(--warn); }
-.goal { fill: none; stroke: var(--good); stroke-width: 0.8; stroke-dasharray: 1.5 1; }
-.door-label { fill: var(--muted); font: 3.2px var(--mono); }
 .twin-meta { margin: 0 0 8px; font: 12.5px var(--mono); color: var(--muted); }
-.door-gap { stroke: var(--warn); stroke-width: 1.2; stroke-dasharray: 1.4 0.8; }
-.door-gap.bad { stroke: var(--bad); }
-.door-gap.good { stroke: var(--good); }
-.chair rect { fill: var(--chair); fill-opacity: 0.85; stroke: #fff; stroke-opacity: 0.35; stroke-width: 0.4; transition: fill 0.2s; }
-.chair .front { stroke: #fff; stroke-width: 1; }
-.chair.jammed rect { fill: var(--bad); animation: jam 0.5s ease-in-out 3; }
-@keyframes jam { 50% { fill-opacity: 0.35; } }
+
+/* floor, walls, threshold */
+.plank { fill: var(--floor); }
+.plank-seam { stroke: var(--floor-seam); stroke-width: 0.12; fill: none; }
+.wall { fill: var(--wall); }
+.step { fill: var(--warn); fill-opacity: 0.55; }
+.step-hatch { stroke: var(--warn); stroke-width: 0.5; }
+.opened { fill: var(--good); fill-opacity: 0.6; }
+.outside { fill: var(--panel-2); }
+.outside-hatch { stroke: var(--line); stroke-width: 0.35; }
+
+/* the door, drawn the way an architect would */
+.door-leaf { stroke: var(--wall); stroke-width: 0.6; stroke-linecap: round; }
+.door-swing { fill: none; stroke: var(--wall); stroke-width: 0.25; stroke-dasharray: 0.8 0.6; opacity: 0.7; }
+.room-label { fill: var(--muted); font: 600 2.6px var(--font); letter-spacing: 0.15px; text-transform: uppercase; opacity: 0.8; }
+
+/* the live track and the goal */
+.trail { fill: none; stroke: var(--link); stroke-width: 0.45; stroke-dasharray: 0.9 0.7; stroke-linecap: round; opacity: 0.75; }
+.goal-ring { fill: none; stroke: var(--good); stroke-width: 0.5; transform-box: fill-box; transform-origin: center; animation: goalpulse 1.8s ease-in-out infinite; }
+.goal-dot { fill: var(--good); }
+@keyframes goalpulse { 50% { transform: scale(1.25); opacity: 0.45; } }
+
+/* the wheelchair, from above */
+.chair-shadow { fill: #000; opacity: 0.22; }
+.chair-frame { fill: var(--chair); stroke: rgba(255, 255, 255, 0.55); stroke-width: 0.25; transition: fill 0.25s; }
+.chair-seat { fill: #2b3440; opacity: 0.88; }
+.chair-back { fill: #1d242c; }
+.chair-foot { fill: #3a4552; }
+.chair-wheel { fill: #14181d; stroke: #4a5560; stroke-width: 0.18; }
+.chair-caster { fill: #14181d; stroke: #4a5560; stroke-width: 0.15; }
+.chair-dir { fill: none; stroke: #fff; stroke-width: 0.45; stroke-linecap: round; stroke-linejoin: round; opacity: 0.9; }
+.chair-glyph.jammed .chair-frame { fill: var(--bad); animation: jam 0.5s ease-in-out 3; }
+@keyframes jam { 50% { fill-opacity: 0.45; } }
+.impact { fill: none; stroke: var(--bad); stroke-width: 0.6; transform-box: fill-box; transform-origin: center; animation: impact 1.2s ease-out infinite; }
+.impact.delay { animation-delay: 0.6s; }
+@keyframes impact { from { transform: scale(0.4); opacity: 1; } to { transform: scale(2.4); opacity: 0; } }
+
+/* floor-plan dimension lines */
+.dim line { stroke: var(--muted); stroke-width: 0.3; }
+.dim-head { fill: var(--muted); }
+.dim text { fill: var(--muted); font: 600 3px var(--mono); }
+.dim.bad line { stroke: var(--bad); }
+.dim.bad text, .dim.bad .dim-head { fill: var(--bad); }
+.dim.good line { stroke: var(--good); }
+.dim.good text, .dim.good .dim-head { fill: var(--good); }
 .status { margin: 10px 0 0; font-weight: 500; }
 .status.bad { color: var(--bad); }
 .status.good { color: var(--good); }
@@ -156,6 +191,6 @@ a.card:hover { border-color: var(--link); }
 .foot { margin-top: 20px; color: var(--muted); font-size: 13px; text-align: center; }
 
 @media (prefers-reduced-motion: reduce) {
-  .ev, .chair.jammed rect { animation: none; }
-  .chair rect { transition: none; }
+  .ev, .chair-glyph.jammed .chair-frame, .goal-ring, .impact { animation: none; }
+  .chair-frame { transition: none; }
 }

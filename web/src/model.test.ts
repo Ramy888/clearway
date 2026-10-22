@@ -1,4 +1,4 @@
-import { chairBox, chairPose, refusalSummary, runScenario, safeHref } from "./model";
+import { buildTimeline, chairBox, chairPose, refusalSummary, runScenario, safeHref, sampleTimeline } from "./model";
 
 describe("safeHref (card URLs come from web search — untrusted)", () => {
   it("allows http(s)", () => {
@@ -40,6 +40,38 @@ describe("chairPose (what the UI draws)", () => {
     expect(p.cx).toBeCloseTo(50);
     expect(p.cy).toBeCloseTo(54); // axle 20 cm behind the centre: centre is 4 cells ahead
     expect([p.L, p.W]).toEqual([20, 12]);
+  });
+});
+
+describe("smooth motion: timeline + sampling", () => {
+  const twin16 = { headings: 16, cell_cm: 5 } as Twin;
+  const chair0 = { name: "c", width_cm: 60, length_cm: 100, caster_climb_mm: 20, axle_offset_cm: 0 };
+  it("starts at the first pose and ends at the last", () => {
+    const tl = buildTimeline([[0, 0, 0], [10, 0, 0], [10, 0, 4]], chair0, twin16);
+    expect(tl.total).toBeGreaterThan(0);
+    expect(sampleTimeline(tl, 0)).toMatchObject({ cx: 0, cy: 0, deg: 0 });
+    const end = sampleTimeline(tl, tl.total);
+    expect(end.cx).toBeCloseTo(10);
+    expect(end.deg).toBeCloseTo(90);
+  });
+  it("moves at constant speed along a straight run (halfway in time = halfway in space)", () => {
+    const tl = buildTimeline([[0, 0, 0], [10, 0, 0], [20, 0, 0]], chair0, twin16);
+    expect(sampleTimeline(tl, tl.total / 2).cx).toBeCloseTo(10);
+  });
+  it("turns the short way round", () => {
+    // 15 of 16 headings = 337.5 degrees, then heading 1 = 22.5: through 0, never through 180
+    const tl = buildTimeline([[5, 5, 15], [5, 5, 0], [5, 5, 1]], chair0, twin16);
+    for (let k = 0; k <= 10; k++) {
+      const d = ((sampleTimeline(tl, (tl.total * k) / 10).deg % 360) + 360) % 360;
+      expect(d > 300 || d < 30).toBe(true);
+    }
+  });
+  it("a pivot keeps a mid-wheel chair's centre still", () => {
+    const tl = buildTimeline([[8, 8, 0], [8, 8, 4]], chair0, twin16);
+    const mid = sampleTimeline(tl, tl.total / 2);
+    expect(mid.cx).toBeCloseTo(8);
+    expect(mid.cy).toBeCloseTo(8);
+    expect(mid.deg).toBeCloseTo(45);
   });
 });
 

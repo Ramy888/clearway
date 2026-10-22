@@ -26,3 +26,6 @@ tasks/
 docs/SPEC.md
 docs/feedback.md
 docs/devpost-submission.md
+scripts/demo-video/out/
+scripts/demo-video/fail.png
+*.mp4

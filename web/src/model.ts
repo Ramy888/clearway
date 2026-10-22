@@ -31,6 +31,54 @@ export function chairPose(pose: Pose, chair: ChairSpec, twin: Pick<Twin, "headin
   return { cx: pose[0] - d * Math.cos(rad), cy: pose[1] - d * Math.sin(rad), deg, L: chair.length_cm / cell, W: chair.width_cm / cell };
 }
 
+// ---- smooth motion: planned poses -> a timed path the UI can sample every frame ----
+
+const SPEED_CELLS_S = 14; // 70 cm/s: an easy indoor driving pace
+const TURN_DEG_S = 120;
+
+interface Key { t: number; x: number; y: number; deg: number }
+export interface Timeline { keys: Key[]; total: number; d: number; L: number; W: number }
+
+/** Timed keyframes at constant speed and turn rate. Routes key the drive axle (the body swings
+ *  about it); door twins key the footprint centre, as their pivot model does. */
+export function buildTimeline(poses: Pose[], chair: ChairSpec, twin: Pick<Twin, "headings" | "cell_cm">): Timeline {
+  const n = twin.headings ?? 4;
+  const route = n !== 4;
+  const keys: Key[] = [];
+  let t = 0;
+  for (const pose of poses) {
+    const p = chairPose(pose, chair, twin);
+    const x = route ? pose[0] : p.cx;
+    const y = route ? pose[1] : p.cy;
+    let deg = p.deg;
+    if (keys.length) {
+      const prev = keys[keys.length - 1];
+      deg = prev.deg + ((((deg - prev.deg) % 360) + 540) % 360) - 180; // the short way round
+      const dur = Math.max(Math.hypot(x - prev.x, y - prev.y) / SPEED_CELLS_S, Math.abs(deg - prev.deg) / TURN_DEG_S, 1 / 120);
+      t += dur;
+    }
+    keys.push({ t, x, y, deg });
+  }
+  const first = chairPose(poses[0], chair, twin);
+  return { keys, total: t, d: route ? (chair.axle_offset_cm ?? 0) / twin.cell_cm : 0, L: first.L, W: first.W };
+}
+
+/** The chair's centre and heading at time t (linear in time; the view adds easing). */
+export function sampleTimeline(tl: Timeline, t: number) {
+  const { keys } = tl;
+  let i = 1;
+  while (i < keys.length - 1 && keys[i].t < t) i++;
+  const a = keys[Math.max(0, i - 1)];
+  const b = keys[Math.min(i, keys.length - 1)];
+  const span = b.t - a.t;
+  const u = span > 0 ? Math.min(1, Math.max(0, (t - a.t) / span)) : 1;
+  const x = a.x + (b.x - a.x) * u;
+  const y = a.y + (b.y - a.y) * u;
+  const deg = a.deg + (b.deg - a.deg) * u;
+  const r = (deg * Math.PI) / 180;
+  return { cx: x - tl.d * Math.cos(r), cy: y - tl.d * Math.sin(r), deg, L: tl.L, W: tl.W };
+}
+
 /** "Refused N of M proposed fixes before you saw one." — counted from the ledger. */
 export function refusalSummary(ledger: LedgerEvent[]) {
   const proposed = ledger.filter((e) => e.action === "propose").length;

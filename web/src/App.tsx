@@ -195,7 +195,12 @@ export default function App() {
                   After fix
                 </button>
               </div>
-              <TwinView key={`${runId}-${phase}`} scene={scene} chair={data.chair} />
+              <TwinView
+                key={`${runId}-${phase}`}
+                scene={scene}
+                chair={data.chair}
+                compareTo={phase === "after" ? data.before.twin : undefined}
+              />
             </>
           ) : (
             <div className="empty">
