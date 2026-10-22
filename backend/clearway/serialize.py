@@ -1,9 +1,8 @@
 """JSON payloads for the UI: the twin, the chair's poses, the ledger, the verdict."""
 from dataclasses import asdict
 
-from .twin import Twin, two_room_template
+from .twin import Twin, twin_for
 from .planner import Chair, Plan, plan
-from .rules import DoorSpec
 
 
 def _runs(cells):
@@ -26,8 +25,9 @@ def _runs(cells):
 
 def twin_to_dict(t: Twin) -> dict:
     return {
-        "W": t.W, "H": t.H, "cell_cm": t.cell_cm,
+        "W": t.W, "H": t.H, "cell_cm": t.cell_cm, "kind": t.kind, "headings": t.headings,
         "door_cm": t.door_cm, "threshold_mm": t.threshold_mm,
+        "width_cm": t.width_cm, "bar_cm": t.bar_cm, "goal_heading": t.goal_heading,
         "walls": _runs(t.blocked), "thresholds": _runs(t.thresholds),
         "start": list(t.start), "goal": list(t.goal), "wall_cols": list(t.wall_cols),
     }
@@ -37,8 +37,8 @@ def plan_to_dict(p: Plan) -> dict:
     return {"reached": p.reached, "poses": [list(s) for s in p.poses]}
 
 
-def _scene(door: DoorSpec, chair: Chair) -> dict:
-    t = two_room_template(door_cm=door.clear_width_cm, threshold_mm=door.threshold_mm)
+def _scene(spec, chair: Chair) -> dict:
+    t = twin_for(spec)
     return {"twin": twin_to_dict(t), "plan": plan_to_dict(plan(t, chair))}
 
 

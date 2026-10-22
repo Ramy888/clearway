@@ -9,9 +9,17 @@ shortcut: effects act on a single DoorSpec measurement; wire them to the full tw
 multi-door routes land.
 """
 from dataclasses import dataclass, field, replace
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
-from .rules import DoorSpec
+from .rules import DoorSpec, RouteSpec
+
+_DOOR = ("door",)
+_ROUTES = ("s_route", "hammerhead")
+
+
+def spec_kind(spec) -> str:
+    """'door' for a doorway, else the route kind ('s_route' / 'hammerhead')."""
+    return spec.kind if isinstance(spec, RouteSpec) else "door"
 
 
 class InvalidFix(ValueError):
@@ -30,6 +38,8 @@ def _widen_frame(d, p, c):        return replace(d, clear_width_cm=p["target_cm"
 def _remove_threshold(d, p, c):   return replace(d, threshold_mm=0)
 def _reverse_swing(d, p, c):      return replace(d, turning_diameter_cm=(d.turning_diameter_cm or 120) + 30)
 def _remove_wall_segment(d, p, c): return replace(d, turning_diameter_cm=160)
+def _widen_corridor(r, p, c):     return replace(r, width_cm=p["target_cm"])
+def _extend_turning_bar(r, p, c): return replace(r, bar_cm=p["target_cm"])
 
 
 @dataclass(frozen=True)
@@ -41,6 +51,7 @@ class FixDef:
     cost_key: str = ""               # key for Tavily price lookup later
     rank: int = 0                    # relative cost, 1 = cheapest (until Tavily prices land)
     phrase: str = ""                 # how a contractor would search for this job
+    applies_to: Tuple[str, ...] = _DOOR   # which spec kinds this fix can change
 
 
 CATALOGUE: Dict[str, FixDef] = {
@@ -55,10 +66,15 @@ CATALOGUE: Dict[str, FixDef] = {
     "remove_wall_segment": FixDef(_remove_wall_segment, requires="allow_wall_removal",
                                   cost_key="remove_wall_segment", rank=5,
                                   phrase="remove a non-load-bearing interior wall"),
+    "widen_corridor":     FixDef(_widen_corridor, params={"target_cm": (int, 60, 200)}, cost_key="widen_corridor",
+                                 rank=4, phrase="widen a hallway", applies_to=_ROUTES),
+    "extend_turning_bar": FixDef(_extend_turning_bar, params={"target_cm": (int, 60, 300)},
+                                 cost_key="extend_turning_bar", rank=5,
+                                 phrase="enlarge a hallway turning space", applies_to=("hammerhead",)),
 }
 
 
-def validate(diff: List[FixOp], context: Optional[dict] = None) -> List[str]:
+def validate(diff: List[FixOp], context: Optional[dict] = None, kind: str = "door") -> List[str]:
     """Return a list of errors (empty == valid). Never applies anything."""
     context = context or {}
     errors: List[str] = []
@@ -66,6 +82,9 @@ def validate(diff: List[FixOp], context: Optional[dict] = None) -> List[str]:
         spec = CATALOGUE.get(op.fix_id)
         if spec is None:
             errors.append(f"[{i}] unknown fix '{op.fix_id}'")
+            continue
+        if kind not in spec.applies_to:
+            errors.append(f"[{i}] {op.fix_id}: does not apply to a {kind.replace('_', ' ')}")
             continue
         for k in op.params:
             if k not in spec.params:
@@ -84,8 +103,9 @@ def validate(diff: List[FixOp], context: Optional[dict] = None) -> List[str]:
     return errors
 
 
-def apply(door: DoorSpec, diff: List[FixOp], context: Optional[dict] = None) -> DoorSpec:
-    errors = validate(diff, context)
+def apply(door, diff: List[FixOp], context: Optional[dict] = None):
+    """Fold the diff onto a DoorSpec or RouteSpec, after the trust-boundary check."""
+    errors = validate(diff, context, spec_kind(door))
     if errors:
         raise InvalidFix("; ".join(errors))
     d = door

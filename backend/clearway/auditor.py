@@ -14,9 +14,9 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from .rules import DoorSpec, evaluate
-from .catalogue import FixOp, apply, validate
-from .twin import two_room_template
-from .planner import Chair, drive
+from .catalogue import FixOp, apply, spec_kind, validate
+from .twin import twin_for
+from .planner import Chair, plan
 
 
 @dataclass(frozen=True)
@@ -33,7 +33,7 @@ class AuditResult:
 
 def audit(before: DoorSpec, diff: List[FixOp], chair: Chair,
           standard: str = "ADA", context: Optional[dict] = None) -> AuditResult:
-    errors = validate(diff, context)
+    errors = validate(diff, context, spec_kind(before))
     if errors:
         return AuditResult(False, diff, False, False, before, None,
                            reason="invalid fix: " + "; ".join(errors))
@@ -41,8 +41,8 @@ def audit(before: DoorSpec, diff: List[FixOp], chair: Chair,
     after = apply(before, diff, context)
 
     # Independent gate 1: rebuild the twin from raw numbers and re-drive this chair.
-    twin = two_room_template(door_cm=after.clear_width_cm, threshold_mm=after.threshold_mm)
-    physics_ok = drive(twin, chair)
+    route = plan(twin_for(after), chair)
+    physics_ok = route.reached
 
     # Independent gate 2: code compliance, thresholds straight from rules.py.
     findings = evaluate(after, standard)
@@ -55,5 +55,8 @@ def audit(before: DoorSpec, diff: List[FixOp], chair: Chair,
         failed = next(f for f in findings if not f.passed)
         return AuditResult(False, diff, physics_ok, code_ok, before, after,
                            reason=f"code fail: {failed.note}", failing_clause=failed.clause)
+    if route.exhausted:   # a search budget is not physics: refuse to certify, and say why
+        return AuditResult(False, diff, physics_ok, code_ok, before, after,
+                           reason="physics undetermined: the route search ran out of budget")
     return AuditResult(False, diff, physics_ok, code_ok, before, after,
                        reason="physics fail: chair still cannot reach the goal")

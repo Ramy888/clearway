@@ -198,6 +198,7 @@ def _reconstruct(came, s):
     return path[::-1]
 
 
+@lru_cache(maxsize=256)   # twins and chairs are immutable; a run re-plans the same pair several times
 def plan(twin: Twin, chair: Chair) -> Plan:
     """A* over (x, y, heading). On a jam, the path to the closest reachable pose.
 
@@ -269,10 +270,26 @@ def drive(twin: Twin, chair: Chair) -> bool:
     return plan(twin, chair).reached
 
 
+def _route_jam(twin: Twin, chair: Chair) -> Jam:
+    w = twin.width_cm
+    if w < chair.width_cm:
+        return Jam("clear_width", w, chair.width_cm, "cm",
+                   f"hallway clear width {w} cm < chair width {chair.width_cm} cm")
+    if twin.kind == "hammerhead":
+        return Jam("turning_space", twin.bar_cm, 0, "cm",
+                   f"the chair cannot turn around in a T with {w} cm arms and a {twin.bar_cm} cm bar")
+    return Jam("turn_radius", w, 0, "cm", f"the chair cannot get round the bends of a {w} cm hallway")
+
+
 def analyze(twin: Twin, chair: Chair) -> Jam | None:
     """Return None if the chair reaches the goal, else a classified Jam."""
-    if drive(twin, chair):
+    p = plan(twin, chair)
+    if p.reached:
         return None
+    if p.exhausted:   # a search budget is not physics: say so, never call it a jam
+        return Jam("undetermined", 0, 0, detail="the route search ran out of budget; no verdict")
+    if twin.kind != "door":
+        return _route_jam(twin, chair)
     # Jammed: measure the real opening from the grid and classify, in priority order.
     gap_cells = max((max_free_run(twin, c) for c in twin.wall_cols), default=0)
     measured_cm = gap_cells * twin.cell_cm

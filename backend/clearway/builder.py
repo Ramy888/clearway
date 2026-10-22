@@ -78,7 +78,7 @@ def make_llm_maker(chat: Optional[Callable] = None, tier: str = "super",
     """A maker for orchestrator.run backed by a Nemotron tier (chat is injectable)."""
     chat = chat or _llm.chat
 
-    def maker(jam, chair, standard, history):
+    def maker(jam, chair, standard, history, spec=None):
         content, _ = chat(tier, build_messages(jam, chair, standard, history, context),
                           max_tokens=2048)
         return parse_ops(content)

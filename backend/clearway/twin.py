@@ -5,6 +5,7 @@ must make (start -> goal). Everything downstream (the planner, the rule engine, 
 auditor) reads measurements off this grid, never off an LLM.
 """
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import FrozenSet, Optional, Tuple
 
 from .rules import DoorSpec, RouteSpec
@@ -154,6 +155,7 @@ def _hammerhead(spec: RouteSpec) -> Twin:
                         kind="hammerhead", width_cm=spec.width_cm, bar_cm=spec.bar_cm)
 
 
+@lru_cache(maxsize=128)
 def twin_for(spec) -> Twin:
     """The twin a spec describes: the single place that turns measurements into geometry."""
     if isinstance(spec, RouteSpec):
