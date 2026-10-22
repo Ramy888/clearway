@@ -1,0 +1,14 @@
+[project]
+name = "clearway"
+version = "0.1.0"
+description = "Test-drive your home before you change it: a wheelchair digital twin with an independent auditor."
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.142.2",
+    "httpx>=0.28.1",
+    "uvicorn>=0.30",
+]
+
+[tool.uv]
+package = false

@@ -32,6 +32,7 @@ class RunResult:
     accepted_fix: List[FixOp]
     after: Optional[DoorSpec]
     ledger: List[Event] = field(default_factory=list)
+    before: Optional[DoorSpec] = None
 
 
 def _describe(diff: List[FixOp]) -> str:
@@ -74,7 +75,7 @@ def run(before: DoorSpec, chair: Chair, standard: str = "ADA",
     jam = analyze(twin, chair)
     if jam is None:
         ledger.append(Event("Pilot", "drive", True, "chair reaches the goal; already accessible"))
-        return RunResult(True, False, 0, [], before, ledger)
+        return RunResult(True, False, 0, [], before, ledger, before=before)
     ledger.append(Event("Pilot", "drive", False, f"JAM {jam.reason}: {jam.detail}"))
 
     failed = [f for f in evaluate(before, standard) if not f.passed]
@@ -96,7 +97,7 @@ def run(before: DoorSpec, chair: Chair, standard: str = "ADA",
                                 f"both checks pass -> {res.after.clear_width_cm} cm, "
                                 f"{res.after.threshold_mm} mm step"))
             ledger.append(Event("Human", "approve-pending", True, "awaiting user approval"))
-            return RunResult(True, False, refused, diff, res.after, ledger)
+            return RunResult(True, False, refused, diff, res.after, ledger, before=before)
         refused += 1
         tail = f" [{res.failing_clause}]" if res.failing_clause else ""
         ledger.append(Event("Auditor", "refuse", False, res.reason + tail))
@@ -105,7 +106,7 @@ def run(before: DoorSpec, chair: Chair, standard: str = "ADA",
     ledger.append(Event("Scribe", "escalate", True,
                         f"no catalogue fix cleared both checks after {refused} "
                         f"attempt(s) -> contractor brief"))
-    return RunResult(False, True, refused, [], None, ledger)
+    return RunResult(False, True, refused, [], None, ledger, before=before)
 
 
 def render(result: RunResult) -> str:

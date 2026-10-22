@@ -37,8 +37,13 @@ auditor) first; agents and UI follow.
 
 ```bash
 cd backend
-python3 -m unittest discover -s tests
+uv sync                                        # fastapi, uvicorn, httpx
+uv run python -m unittest discover -s tests    # full suite (core runs on plain python3 too)
+uv run uvicorn clearway.api:app --port 8000    # API for the web UI
 ```
+
+Live runs (Nemotron + Tavily) need `NEBIUS_API_KEY` and `TAVILY_API_KEY` in `.env`
+(see `.env.example`) and `CLEARWAY_ALLOW_LIVE=1`; offline runs cost nothing.
 
 ## License
 
