@@ -1,20 +1,19 @@
 """HTTP API for the CLEARWAY UI.
 
 Every input is range-checked (this is a public surface once hosted). Live runs spend
-Token Factory and Tavily credits, so they are refused unless CLEARWAY_ALLOW_LIVE is set;
-offline runs use the deterministic stub maker and cost nothing.
-
-shortcut: no rate limit / daily budget yet — keep CLEARWAY_ALLOW_LIVE off on any public
-host until T14 adds them.
+Token Factory and Tavily credits, so they are refused unless CLEARWAY_ALLOW_LIVE is set,
+rate-limited per client, and capped per UTC day (checked before any model call). Offline
+runs use the deterministic stub maker and cost nothing, but are still rate-limited.
 """
 import os
 from typing import Dict, List, Literal, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from .auditor import audit
 from .catalogue import FixOp
+from .limits import DailyBudget, RateLimiter
 from .planner import Chair
 from .rules import DoorSpec
 from .orchestrator import run
@@ -22,6 +21,40 @@ from .scribe import approved_brief, escalation_brief
 from .serialize import run_to_dict
 
 app = FastAPI(title="CLEARWAY")
+
+_WINDOW_S = float(os.environ.get("CLEARWAY_WINDOW_S", "600"))
+RUN_LIMIT = RateLimiter(int(os.environ.get("CLEARWAY_RUNS_PER_WINDOW", "30")), _WINDOW_S)
+LIVE_LIMIT = RateLimiter(int(os.environ.get("CLEARWAY_LIVE_PER_WINDOW", "3")), _WINDOW_S)
+# Every live run spends Token Factory + Tavily credit; this caps what anonymous visitors can spend.
+LIVE_BUDGET = DailyBudget(int(os.environ.get("CLEARWAY_LIVE_RUNS_PER_DAY", "40")))
+TRUST_PROXY = os.environ.get("CLEARWAY_TRUST_PROXY") == "1"
+
+
+def _client_key(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if TRUST_PROXY and forwarded:
+        # The trusted proxy appends the address it saw; earlier entries are client-supplied.
+        return forwarded.split(",")[-1].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _throttle(limiter: RateLimiter, key: str, what: str) -> None:
+    wait = limiter.check(key)
+    if wait:
+        raise HTTPException(429, f"too many {what}; try again in {wait} s", headers={"Retry-After": str(wait)})
+
+
+def _gate(request: Request, live: bool) -> None:
+    """Rate-limit every request; for live ones also require the flag and spend the budget."""
+    key = _client_key(request)
+    _throttle(RUN_LIMIT, key, "runs")
+    if not live:
+        return
+    if not _live_allowed():
+        raise HTTPException(403, "live runs are disabled on this server")
+    _throttle(LIVE_LIMIT, key, "live runs")
+    if not LIVE_BUDGET.take():
+        raise HTTPException(429, "today's live-run budget is used up; try an offline run")
 
 
 class ChairIn(BaseModel):
@@ -69,18 +102,17 @@ def _live_allowed() -> bool:
 
 @app.get("/api/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "live": _live_allowed(), "live_runs_left_today": LIVE_BUDGET.remaining()}
 
 
 @app.post("/api/run")
-def run_endpoint(body: RunIn):
+def run_endpoint(body: RunIn, request: Request):
+    _gate(request, body.live)
     chair = Chair(**body.chair.model_dump())
     door = DoorSpec(clear_width_cm=body.door_cm, threshold_mm=body.threshold_mm)
     if not body.live:
         return run_to_dict(run(door, chair, body.standard), chair)
 
-    if not _live_allowed():
-        raise HTTPException(403, "live runs are disabled on this server")
     from .builder import make_llm_maker
     from .llm import LLMError
     from .research import TavilyResearch
@@ -92,12 +124,12 @@ def run_endpoint(body: RunIn):
 
 
 @app.post("/api/brief")
-def brief_endpoint(body: BriefIn):
+def brief_endpoint(body: BriefIn, request: Request):
     """A brief only ever describes a fix that independently passes the Auditor again."""
+    # only a live brief with a fix calls a model, so only that one spends the live budget
+    _gate(request, body.live and bool(body.fix))
     chair = Chair(**body.chair.model_dump())
     before = DoorSpec(clear_width_cm=body.door_cm, threshold_mm=body.threshold_mm)
-    if body.live and not _live_allowed():
-        raise HTTPException(403, "live runs are disabled on this server")
     if not body.fix:
         return escalation_brief(before, chair, body.standard)
 

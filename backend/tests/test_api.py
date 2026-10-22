@@ -12,11 +12,52 @@ except ImportError:  # only a missing fastapi skips; a broken clearway.api must 
 @unittest.skipIf(TestClient is None, "fastapi not installed (use: uv run)")
 class TestApi(unittest.TestCase):
     def setUp(self):
-        from clearway.api import app
-        self.client = TestClient(app)
+        from clearway import api
+        from clearway.limits import DailyBudget, RateLimiter
+        self.api = api
+        # fresh, generous limits per test so tests never throttle each other
+        for name, value in (("RUN_LIMIT", RateLimiter(1000, 600)), ("LIVE_LIMIT", RateLimiter(1000, 600)),
+                            ("LIVE_BUDGET", DailyBudget(1000))):
+            patcher = mock.patch.object(api, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.client = TestClient(api.app)
 
     def test_health(self):
-        self.assertEqual(self.client.get("/api/health").json(), {"ok": True})
+        with mock.patch.dict(os.environ, {"CLEARWAY_ALLOW_LIVE": ""}):
+            d = self.client.get("/api/health").json()
+        self.assertTrue(d["ok"])
+        self.assertFalse(d["live"])
+        self.assertIn("live_runs_left_today", d)
+
+    def test_runs_are_rate_limited_per_client(self):
+        from clearway.limits import RateLimiter
+        with mock.patch.object(self.api, "RUN_LIMIT", RateLimiter(2, 600)):
+            body = {"door_cm": 90}
+            self.assertEqual(self.client.post("/api/run", json=body).status_code, 200)
+            self.assertEqual(self.client.post("/api/run", json=body).status_code, 200)
+            r = self.client.post("/api/run", json=body)
+        self.assertEqual(r.status_code, 429)
+        self.assertIn("retry-after", r.headers)
+
+    def test_spoofed_forwarded_for_does_not_dodge_the_limit(self):
+        from clearway.limits import RateLimiter
+        with mock.patch.object(self.api, "RUN_LIMIT", RateLimiter(1, 600)):
+            self.client.post("/api/run", json={"door_cm": 90}, headers={"X-Forwarded-For": "1.1.1.1"})
+            r = self.client.post("/api/run", json={"door_cm": 90}, headers={"X-Forwarded-For": "2.2.2.2"})
+        self.assertEqual(r.status_code, 429)
+
+    def test_daily_live_budget_stops_spend_before_any_model_call(self):
+        from clearway.limits import DailyBudget
+
+        def no_spend(*a, **kw):
+            raise AssertionError("a model was called despite an exhausted budget")
+        with mock.patch.dict(os.environ, {"CLEARWAY_ALLOW_LIVE": "1"}), \
+                mock.patch.object(self.api, "LIVE_BUDGET", DailyBudget(0)), \
+                mock.patch("clearway.llm.chat", no_spend):
+            r = self.client.post("/api/run", json={"door_cm": 65, "live": True})
+        self.assertEqual(r.status_code, 429)
+        self.assertIn("budget", r.json()["detail"])
 
     def test_offline_run_refuses_then_accepts(self):
         r = self.client.post("/api/run", json={"door_cm": 65, "chair": {"width_cm": 70, "length_cm": 110}})
