@@ -15,7 +15,8 @@ RULE_PACK_VERSION = "ada-2010+en17210.v2"
 # Code minimums/maximums, in millimetres. ADA values checked against access-board.gov (2026-10-22).
 CLEAR_WIDTH_MIN_MM = {"ADA": 815, "EN17210": 850}   # ADA 404.2.3 / EN 17210
 THRESHOLD_MAX_MM = 13                                # ADA 404.2.5
-# ADA 304.3.1: 60 in (1525 mm) circle. EN 17210 1500 mm is not re-verified against the text.
+# ADA 304.3.1: 60 in (1525 mm) circle, checked against access-board.gov (2026-10-22).
+# EN 17210's 1500 mm is not re-verified against the standard's text.
 TURNING_DIAMETER_MIN_MM = {"ADA": 1525, "EN17210": 1500}
 ROUTE_WIDTH_MIN_MM = 915      # ADA 403.5.1 walking surface; also the T's arms and base (304.3.2)
 T_SQUARE_MIN_MM = 1525        # ADA 304.3.2: the T-shaped space fits within a 60 in (1525 mm) square

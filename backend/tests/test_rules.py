@@ -37,6 +37,14 @@ class TestThresholdAndStandard(unittest.TestCase):
         self.assertFalse(complies(DoorSpec(clear_width_cm=84), standard="EN17210"))
         self.assertTrue(complies(DoorSpec(clear_width_cm=86), standard="EN17210"))
 
+    def test_ada_turning_circle_is_1525_mm(self):
+        # ADA 304.3.1: 60 inch (1525 mm) diameter, checked against access-board.gov text.
+        f = {x.rule_id: x for x in evaluate(DoorSpec(clear_width_cm=90, turning_diameter_cm=150))}
+        self.assertFalse(f["turning"].passed)
+        self.assertEqual(f["turning"].required_mm, 1525)
+        self.assertIn("304.3", f["turning"].clause)
+        self.assertTrue(complies(DoorSpec(clear_width_cm=90, turning_diameter_cm=155)))
+
     def test_rule_pack_is_versioned(self):
         self.assertTrue(RULE_PACK_VERSION)
 
