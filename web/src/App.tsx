@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { Ledger } from "./Ledger";
 import { TwinView } from "./TwinView";
 import { CHAIRS, PRESETS, describeFix, fetchBrief, refusalSummary, runScenario, type Brief } from "./model";
@@ -35,6 +35,14 @@ export default function App() {
   const [briefError, setBriefError] = useState<string | null>(null);
 
   const isRoute = Boolean(PRESETS.find((p) => p.id === presetId)?.route);
+
+  // one column (phones): the twin sits below the setup, so bring the drive into view
+  const stageRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (runId === 0 || !window.matchMedia?.("(max-width: 760px)").matches) return;
+    const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    stageRef.current?.scrollIntoView?.({ behavior: smooth ? "smooth" : "auto", block: "start" });
+  }, [runId]);
 
   function choosePreset(id: string) {
     const preset = PRESETS.find((p) => p.id === id)!;
@@ -179,7 +187,7 @@ export default function App() {
           )}
         </section>
 
-        <section className="panel stage" aria-label="Digital twin">
+        <section className="panel stage" aria-label="Digital twin" ref={stageRef}>
           {data && scene ? (
             <>
               <div className="tabs" role="tablist" aria-label="Scene">

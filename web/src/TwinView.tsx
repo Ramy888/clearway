@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { buildTimeline, sampleTimeline, type Timeline } from "./model";
 import type { ChairSpec, Run, Scene, Twin } from "./types";
 
@@ -164,6 +164,20 @@ function useTimeline(tl: Timeline) {
   return t;
 }
 
+/** Plan units per screen pixel, so labels can keep a readable size when a phone shrinks the plan. */
+function useUnitsPerPx(units: number) {
+  const ref = useRef<SVGSVGElement>(null);
+  const [upp, setUpp] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([e]) => e.contentRect.width && setUpp(units / e.contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [units]);
+  return [ref, upp] as const;
+}
+
 /** Top-down twin with the chair gliding along its real planned path. Remount (key) to replay. */
 export function TwinView({ scene, chair, compareTo }: { scene: Scene; chair: ChairSpec; compareTo?: Twin }) {
   const { twin, plan } = scene;
@@ -195,6 +209,10 @@ export function TwinView({ scene, chair, compareTo }: { scene: Scene; chair: Cha
   const front = { x: p.cx + (p.L / 2) * Math.cos(r), y: p.cy + (p.L / 2) * Math.sin(r) };
   const dimClass = jammed ? "dim bad" : done && plan.reached ? "dim good" : "dim";
   const status = statusText(scene, chair, done);
+  const [svgRef, upp] = useUnitsPerPx(twin.W);
+  // label sizes in plan units: the desktop sizes, but never under 10 px (rooms 9 px) on screen
+  const dimFs = Math.max(3, 10 * upp);
+  const fonts = { "--dim-fs": `${dimFs}px`, "--room-fs": `${Math.max(2.6, 9 * upp)}px` } as CSSProperties;
 
   return (
     <figure className="twin">
@@ -203,7 +221,7 @@ export function TwinView({ scene, chair, compareTo }: { scene: Scene; chair: Cha
           Hallway {twin.width_cm} cm{twin.kind === "hammerhead" ? ` · turning space ${twin.bar_cm} cm` : " · two bends"}
         </p>
       )}
-      <svg viewBox={`0 0 ${twin.W} ${twin.H}`} role="img" aria-label={`Floor plan. ${status}`}>
+      <svg ref={svgRef} style={fonts} viewBox={`0 0 ${twin.W} ${twin.H}`} role="img" aria-label={`Floor plan. ${status}`}>
         <defs>
           <pattern id={`planks${uid}`} width="24" height="6" patternUnits="userSpaceOnUse">
             <rect width="24" height="6" className="plank" />
@@ -273,9 +291,9 @@ export function TwinView({ scene, chair, compareTo }: { scene: Scene; chair: Cha
             <g key={`d${k}`} className={dimClass}>
               <line x1={m.x1} y1={m.y1} x2={m.x2} y2={m.y2} markerStart={`url(#arrow${uid})`} markerEnd={`url(#arrow${uid})`} />
               <text
-                x={vertical && !m.below ? m.x1 - 1.2 : vertical ? m.x1 : (m.x1 + m.x2) / 2}
-                y={m.below ? m.y2 + 3.4 : vertical ? (m.y1 + m.y2) / 2 : m.y1 - 1.2}
-                textAnchor={m.below ? "middle" : vertical ? "end" : "middle"}
+                x={vertical && !m.below ? m.x1 - 1.2 : vertical ? m.x1 - 0.4 : (m.x1 + m.x2) / 2}
+                y={m.below ? m.y2 + 0.4 + dimFs : vertical ? (m.y1 + m.y2) / 2 : m.y1 - 1.2}
+                textAnchor={vertical && m.below ? "start" : vertical ? "end" : "middle"}
                 dominantBaseline={vertical && !m.below ? "middle" : "auto"}
               >
                 {m.label}

@@ -85,3 +85,16 @@ it("shows the server's reason instead of a blank screen", async () => {
   fireEvent.click(screen.getByRole("button", { name: /test-drive/i }));
   expect((await screen.findByRole("alert")).textContent).toMatch(/live runs are disabled/);
 });
+
+it("on a phone (one column), brings the twin into view after a test drive; not on wider screens", async () => {
+  const scroll = vi.fn();
+  Element.prototype.scrollIntoView = scroll;
+  await runIt(); // matchMedia mock matches everything: a phone with reduced motion
+  expect(scroll).toHaveBeenCalledWith({ behavior: "auto", block: "start" });
+
+  scroll.mockClear();
+  window.matchMedia = vi.fn((q: string) => ({ matches: q.includes("reduce"), addEventListener() {}, removeEventListener() {} })) as never;
+  fireEvent.click(screen.getByRole("button", { name: /test-drive/i }));
+  await screen.findByRole("button", { name: /test-drive/i });
+  expect(scroll).not.toHaveBeenCalled();
+});
