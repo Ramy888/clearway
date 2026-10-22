@@ -23,6 +23,24 @@ class TestApi(unittest.TestCase):
             self.addCleanup(patcher.stop)
         self.client = TestClient(api.app)
 
+    def test_built_ui_is_served_and_api_still_wins(self):
+        import pathlib
+        import tempfile
+        from fastapi import FastAPI
+        from clearway.api import mount_web
+        dist = pathlib.Path(tempfile.mkdtemp())
+        (dist / "index.html").write_text("<title>CLEARWAY</title>")
+        app = FastAPI()
+
+        @app.get("/api/health")
+        def health():
+            return {"ok": True}
+        mount_web(app, dist)
+        c = TestClient(app)
+        self.assertIn("CLEARWAY", c.get("/").text)
+        self.assertEqual(c.get("/api/health").json(), {"ok": True})
+        mount_web(FastAPI(), dist / "missing")   # no build yet: a no-op, not a crash
+
     def test_health(self):
         with mock.patch.dict(os.environ, {"CLEARWAY_ALLOW_LIVE": ""}):
             d = self.client.get("/api/health").json()

@@ -6,9 +6,11 @@ rate-limited per client, and capped per UTC day (checked before any model call).
 runs use the deterministic stub maker and cost nothing, but are still rate-limited.
 """
 import os
+from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .auditor import audit
@@ -140,3 +142,12 @@ def brief_endpoint(body: BriefIn, request: Request):
     from .llm import chat
     return approved_brief(before, res.after, ops, chair, body.standard,
                           [c.model_dump() for c in body.cards], chat=chat if body.live else None)
+
+
+def mount_web(target: FastAPI, dist: Path) -> None:
+    """Serve the built React UI at / (registered last, so /api/* routes win)."""
+    if dist.is_dir():
+        target.mount("/", StaticFiles(directory=dist, html=True), name="web")
+
+
+mount_web(app, Path(os.environ.get("CLEARWAY_WEB_DIST", Path(__file__).resolve().parents[2] / "web" / "dist")))

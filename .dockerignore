@@ -1,0 +1,15 @@
+# secrets never enter the build context
+.env
+.env.*
+!.env.example
+
+.git
+**/node_modules
+**/dist
+**/.venv
+**/__pycache__
+tasks/
+docs/
+CLAUDE.md
+AGENTS.md
+.claude/
