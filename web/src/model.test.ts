@@ -1,4 +1,4 @@
-import { chairBox, refusalSummary, runScenario, safeHref } from "./model";
+import { chairBox, chairPose, refusalSummary, runScenario, safeHref } from "./model";
 
 describe("safeHref (card URLs come from web search — untrusted)", () => {
   it("allows http(s)", () => {
@@ -12,7 +12,7 @@ describe("safeHref (card URLs come from web search — untrusted)", () => {
     expect(safeHref("")).toBeNull();
   });
 });
-import type { LedgerEvent } from "./types";
+import type { LedgerEvent, Twin } from "./types";
 
 const power = { width_cm: 70, length_cm: 110, caster_climb_mm: 20, name: "power" };
 const ev = (agent: string, action: string): LedgerEvent => ({ agent, action, ok: true, detail: "", engine: "", card: null });
@@ -23,6 +23,23 @@ describe("chairBox matches the backend footprint exactly", () => {
   });
   it("facing +y: width runs along x", () => {
     expect(chairBox([31, 31, 1], power, 5)).toEqual({ x: 24, y: 20, w: 14, h: 22, heading: 1 });
+  });
+});
+
+describe("chairPose (what the UI draws)", () => {
+  it("door twins keep the 4-heading footprint", () => {
+    const twin = { headings: 4, cell_cm: 5 } as Twin;
+    expect(chairPose([31, 31, 0], power, twin)).toEqual({ cx: 31, cy: 31, deg: 0, L: 22, W: 14 });
+    expect(chairPose([31, 31, 1], power, twin)).toEqual({ cx: 31, cy: 31, deg: 90, L: 22, W: 14 });
+  });
+  it("route twins rotate about the drive axle", () => {
+    const twin = { headings: 16, cell_cm: 5 } as Twin;
+    const rear = { name: "r", width_cm: 60, length_cm: 100, caster_climb_mm: 20, axle_offset_cm: -20, turning_diameter_cm: 0 };
+    const p = chairPose([50, 50, 4], rear, twin); // heading 4 of 16 = 90 degrees (+y)
+    expect(p.deg).toBe(90);
+    expect(p.cx).toBeCloseTo(50);
+    expect(p.cy).toBeCloseTo(54); // axle 20 cm behind the centre: centre is 4 cells ahead
+    expect([p.L, p.W]).toEqual([20, 12]);
   });
 });
 

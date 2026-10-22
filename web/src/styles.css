@@ -92,12 +92,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, .card:focus-vis
 .tabs button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .twin { margin: 0; }
-.twin svg { width: 100%; height: auto; display: block; border-radius: 8px; }
+.twin svg { width: 100%; height: auto; max-height: min(60vh, 560px); display: block; border-radius: 8px; }
 .floor { fill: var(--floor); }
 .wall { fill: var(--wall); }
 .step { fill: var(--warn); }
 .goal { fill: none; stroke: var(--good); stroke-width: 0.8; stroke-dasharray: 1.5 1; }
 .door-label { fill: var(--muted); font: 3.2px var(--mono); }
+.twin-meta { margin: 0 0 8px; font: 12.5px var(--mono); color: var(--muted); }
 .door-gap { stroke: var(--warn); stroke-width: 1.2; stroke-dasharray: 1.4 0.8; }
 .door-gap.bad { stroke: var(--bad); }
 .door-gap.good { stroke: var(--good); }

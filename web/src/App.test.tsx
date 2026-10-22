@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import App from "./App";
 import fixture from "./fixtures/run65.json"; // a real /api/run payload from the backend
+import routeFixture from "./fixtures/route_s.json"; // a real route payload (S-hallway, Quantum Q6)
 
 const BRIEF = { markdown: "# CLEARWAY contractor brief\n- widen frame to 82 cm", narrative_source: "none", withheld: false };
 
@@ -60,6 +61,22 @@ it("plays the fixed home and gates on human approval", async () => {
   const sent = JSON.parse((call[1] as RequestInit).body as string);
   expect(sent.fix).toEqual([{ fix_id: "widen_frame", params: { target_cm: 82 } }]);
   expect(sent.door_cm).toBe(65);
+});
+
+it("runs a route preset: sends a route with its real chair and draws the chair rotated", async () => {
+  reply(true, 200, routeFixture);
+  render(<App />);
+  fireEvent.click(screen.getByLabelText(/S-shaped hallway/i));
+  expect((screen.getByLabelText(/EN 17210/i) as HTMLInputElement).disabled).toBe(true); // routes: ADA only
+  fireEvent.click(screen.getByRole("button", { name: /test-drive/i }));
+  await screen.findByText("Refused 1 of 2 proposed fixes before you saw one.");
+  const call = vi.mocked(fetch).mock.calls.find(([u]) => u === "/api/run")!;
+  const sent = JSON.parse((call[1] as RequestInit).body as string);
+  expect(sent.route.kind).toBe("s_route");
+  expect(sent.door_cm).toBeUndefined();
+  expect(sent.chair.name).toBe("Quantum Q6 Edge 3 Stretto");
+  expect(screen.getByRole("status").textContent).toMatch(/jam/i);
+  expect(document.querySelector("g.chair")!.getAttribute("transform")).toMatch(/rotate\(/);
 });
 
 it("shows the server's reason instead of a blank screen", async () => {

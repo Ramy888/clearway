@@ -34,9 +34,23 @@ export default function App() {
   const [briefBusy, setBriefBusy] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
 
+  const isRoute = Boolean(PRESETS.find((p) => p.id === presetId)?.route);
+
+  function choosePreset(id: string) {
+    const preset = PRESETS.find((p) => p.id === id)!;
+    setPresetId(id);
+    if (preset.route) {
+      setStandard("ADA"); // routes: ADA 403.5.1 / 304.3.2 only
+      const calibrated = CHAIRS.find((c) => c.name === preset.chair);
+      if (calibrated) setChair(calibrated); // the real chair the route preset was calibrated with
+    }
+  }
+
   async function testDrive() {
     const preset = PRESETS.find((p) => p.id === presetId)!;
-    const req: RunRequest = { door_cm: preset.door_cm, threshold_mm: preset.threshold_mm, chair, standard, live };
+    const req: RunRequest = preset.route
+      ? { route: preset.route, chair, standard: "ADA", live } // routes are checked against ADA only
+      : { door_cm: preset.door_cm, threshold_mm: preset.threshold_mm ?? 0, chair, standard, live };
     setBusy(true);
     setError(null);
     setApproved(false);
@@ -98,7 +112,7 @@ export default function App() {
           <div className="choices" role="radiogroup" aria-label="Home">
             {PRESETS.map((p) => (
               <label key={p.id} className={presetId === p.id ? "choice on" : "choice"}>
-                <input type="radio" name="home" value={p.id} checked={presetId === p.id} onChange={() => setPresetId(p.id)} />
+                <input type="radio" name="home" value={p.id} checked={presetId === p.id} onChange={() => choosePreset(p.id)} />
                 <span className="choice-title">{p.label}</span>
                 <span className="choice-blurb">{p.blurb}</span>
               </label>
@@ -138,7 +152,13 @@ export default function App() {
           <div className="seg" role="radiogroup" aria-label="Standard">
             {(["ADA", "EN17210"] as Standard[]).map((s) => (
               <label key={s} className={standard === s ? "on" : ""}>
-                <input type="radio" name="std" checked={standard === s} onChange={() => setStandard(s)} />
+                <input
+                  type="radio"
+                  name="std"
+                  checked={standard === s}
+                  disabled={isRoute && s !== "ADA"}
+                  onChange={() => setStandard(s)}
+                />
                 {s === "ADA" ? "ADA 2010" : "EN 17210"}
               </label>
             ))}

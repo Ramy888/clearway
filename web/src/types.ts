@@ -13,6 +13,11 @@ export interface Twin {
   start: Pose;
   goal: [number, number];
   wall_cols: number[];
+  kind?: "door" | "s_route" | "hammerhead";
+  headings?: number; // 4 for doors (pivot model); 16 for routes (wheelchair kinematics)
+  width_cm?: number;
+  bar_cm?: number;
+  goal_heading?: number | null;
 }
 
 export interface Scene {
@@ -44,7 +49,7 @@ export interface Verdict {
   escalated: boolean;
   refused_count: number;
   accepted_fix: { fix_id: string; params: Record<string, number> }[];
-  after_door: { clear_width_cm: number; threshold_mm: number; turning_diameter_cm: number | null } | null;
+  after_door: Record<string, unknown> | null; // the accepted door or route spec
 }
 
 export interface ChairSpec {
@@ -52,6 +57,15 @@ export interface ChairSpec {
   length_cm: number;
   caster_climb_mm: number;
   name: string;
+  axle_offset_cm?: number; // drive axle relative to the centre: 0 mid-wheel, negative rear-wheel
+  turning_diameter_cm?: number; // from the spec sheet; 0 or absent = unknown (square corners)
+}
+
+export interface RouteSpec {
+  kind: "s_route" | "hammerhead";
+  width_cm: number;
+  bar_cm?: number;
+  legs?: [string, number][];
 }
 
 export interface RunPayload {
@@ -63,8 +77,9 @@ export interface RunPayload {
 }
 
 export interface RunRequest {
-  door_cm: number;
-  threshold_mm: number;
+  door_cm?: number;
+  threshold_mm?: number;
+  route?: RouteSpec;
   chair: ChairSpec;
   standard: "ADA" | "EN17210";
   live: boolean;
