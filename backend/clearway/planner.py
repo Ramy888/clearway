@@ -33,6 +33,8 @@ class Chair:
     length_cm: int
     caster_climb_mm: int = 20   # step height the front casters can roll over
     name: str = "chair"
+    axle_offset_cm: int = 0     # drive axle relative to the centre: 0 mid-wheel, negative rear-wheel
+    turning_diameter_cm: int = 0  # from the spec sheet; 0 = unknown, so corners stay square (worst case)
 
     @property
     def width_cells(self) -> int:
@@ -185,6 +187,7 @@ def _effective_blocked(twin: Twin, chair: Chair):
 class Plan:
     reached: bool
     poses: List[Tuple[int, int, int]]   # start ... goal, or start ... furthest progress
+    exhausted: bool = False             # search budget ran out: undetermined, NOT a jam
 
 
 def _reconstruct(came, s):
@@ -196,16 +199,18 @@ def _reconstruct(came, s):
 
 
 def plan(twin: Twin, chair: Chair) -> Plan:
-    """A* over (x, y, heading). On a jam, the path to the closest reachable pose."""
+    """A* over (x, y, heading). On a jam, the path to the closest reachable pose.
+
+    Door twins (4 headings) use the pivot-in-place model below. Route twins need real turning
+    and go to the wheelchair kinematics in kinematics.py.
+    """
+    if twin.headings != 4:
+        from .kinematics import plan_route
+        return plan_route(twin, chair)
     wc, lc = chair.width_cells, chair.length_cells
     grid = _Grid(_effective_blocked(twin, chair), twin.W, twin.H)
     start, goal, want_h = twin.start, twin.goal, twin.goal_heading
-    n = twin.headings
-    if n in (8, 16):
-        fits = lambda g, s, w, l: _fits_n(g, s, w, l, n)                  # noqa: E731
-        neighbors = lambda s, g, w, l: _neighbors_n(s, g, w, l, n)         # noqa: E731
-    else:
-        fits, neighbors = _fits, lambda s, g, w, l: ((n, 1) for n in _neighbors(s, g, w, l))
+    fits, neighbors = _fits, lambda s, g, w, l: ((n, 1) for n in _neighbors(s, g, w, l))
     if not fits(grid, start, wc, lc):
         return Plan(False, [start])
     openh = [(_heur(start, goal), 0, start)]
@@ -227,6 +232,36 @@ def plan(twin: Twin, chair: Chair) -> Plan:
                 came[ns] = s
                 heapq.heappush(openh, (ng + _heur(ns, goal), ng, ns))
     return Plan(False, _reconstruct(came, closest[2]))
+
+
+def _pivot_radius(chair: Chair, c: float) -> float:
+    """Farthest footprint vertex from the axle, with corners trimmed by `c` cm."""
+    far, half_w = chair.length_cm / 2 + abs(chair.axle_offset_cm), chair.width_cm / 2
+    return max(math.hypot(far, half_w - c), math.hypot(far - c, half_w))
+
+
+def chamfer_cm(chair: Chair) -> float:
+    """Corner trim that makes the footprint's pivot circle match the spec-sheet turning diameter.
+
+    Real chairs have rounded casters, footplates and backrests, so a full rectangle sweeps more
+    than they do. With no spec (0) the corners stay square: the conservative worst case.
+    """
+    target = chair.turning_diameter_cm / 2
+    cmax = min(chair.length_cm, chair.width_cm) / 2
+    if target <= 0 or _pivot_radius(chair, 0) <= target:
+        return 0.0
+    if _pivot_radius(chair, cmax) >= target:
+        return cmax          # the spec is tighter than this footprint allows: trim as far as it can
+    lo, hi = 0.0, cmax
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if _pivot_radius(chair, mid) > target else (lo, mid)
+    return hi
+
+
+def pivot_diameter_cm(chair: Chair) -> float:
+    """Clear circle a chair sweeps spinning on the spot about its axle."""
+    return 2 * _pivot_radius(chair, chamfer_cm(chair))
 
 
 def drive(twin: Twin, chair: Chair) -> bool:

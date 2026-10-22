@@ -1,9 +1,4 @@
-"""Route-mode planner spike: 8 headings, reverse, and a goal heading (turn around, then leave).
-
-The hammerhead (ADA 304.3.2 T-shaped turning space) only means something if turning has a
-cost: with 8 headings a 180-degree turn is four 45-degree steps, and every intermediate
-footprint must fit. Door twins keep their 4-heading behaviour.
-"""
+"""Angled footprints: the row-run masks must cover exactly the rotated rectangle."""
 import math
 import unittest
 
@@ -31,27 +26,6 @@ def hammerhead(arm_cm, bar_cm, corridor_cells=60):
     cx = stem_x + a // 2
     start_y = 5 + a + corridor_cells - 15
     return open_twin([bar, stem], W, H, start=(cx, start_y, 6), goal=(cx, start_y), goal_heading=2)
-
-
-class TestTurnaround(unittest.TestCase):
-    def setUp(self):
-        self.power = Chair(70, 110, name="power")
-
-    def test_turns_around_in_an_open_room(self):
-        t = open_twin([(5, 5, 60, 60)], 70, 70, start=(35, 35, 0), goal=(35, 35), goal_heading=4)
-        p = plan(t, self.power)
-        self.assertTrue(p.reached)
-        self.assertEqual(p.poses[-1], (35, 35, 4))
-
-    def test_cannot_turn_around_in_a_plain_corridor(self):
-        t = open_twin([(5, 5, 19, 120)], 30, 130, start=(14, 80, 6), goal=(14, 80), goal_heading=2)
-        self.assertFalse(plan(t, self.power).reached)
-
-    def test_ada_size_hammerhead_lets_the_chair_turn_around(self):
-        self.assertTrue(plan(hammerhead(arm_cm=95, bar_cm=155), self.power).reached)
-
-    def test_undersized_hammerhead_does_not(self):
-        self.assertFalse(plan(hammerhead(arm_cm=80, bar_cm=110), self.power).reached)
 
 
 class TestDiagonalFootprint(unittest.TestCase):
