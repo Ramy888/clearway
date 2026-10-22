@@ -6,23 +6,35 @@ rate-limited per client, and capped per UTC day (checked before any model call).
 runs use the deterministic stub maker and cost nothing, but are still rate-limited.
 """
 import os
+import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .auditor import audit
 from .catalogue import FixOp
 from .limits import DailyBudget, RateLimiter
 from .planner import Chair
-from .rules import DoorSpec
+from .rules import DoorSpec, RouteSpec
+from .twin import validate_route
 from .orchestrator import run
 from .scribe import approved_brief, escalation_brief
 from .serialize import run_to_dict
 
-app = FastAPI(title="CLEARWAY")
+@asynccontextmanager
+async def _lifespan(_app):
+    # warm the route presets in the background; requests are served meanwhile
+    if os.environ.get("CLEARWAY_WARM", "1") != "0":
+        from .presets import warm
+        threading.Thread(target=warm, daemon=True).start()
+    yield
+
+
+app = FastAPI(title="CLEARWAY", lifespan=_lifespan)
 
 _WINDOW_S = float(os.environ.get("CLEARWAY_WINDOW_S", "600"))
 RUN_LIMIT = RateLimiter(int(os.environ.get("CLEARWAY_RUNS_PER_WINDOW", "30")), _WINDOW_S)
@@ -64,14 +76,49 @@ class ChairIn(BaseModel):
     length_cm: int = Field(110, ge=60, le=160)
     caster_climb_mm: int = Field(20, ge=0, le=100)
     name: str = Field("power", max_length=40)
+    axle_offset_cm: int = Field(0, ge=-60, le=60)         # 0 mid-wheel, negative rear-wheel drive
+    turning_diameter_cm: int = Field(0, ge=0, le=300)     # from the spec sheet; 0 = unknown
 
 
-class RunIn(BaseModel):
-    door_cm: int = Field(..., ge=40, le=150)
+class RouteIn(BaseModel):
+    kind: Literal["s_route", "hammerhead"]
+    width_cm: int = Field(..., ge=40, le=200)
+    bar_cm: int = Field(0, ge=0, le=300)
+    legs: List[Tuple[str, int]] = Field(default_factory=list, max_length=12)
+
+    def spec(self) -> RouteSpec:
+        return RouteSpec(self.kind, self.width_cm, self.bar_cm, tuple(tuple(leg) for leg in self.legs))
+
+
+class SpecIn(BaseModel):
+    """Exactly one of a doorway (door_cm) or a route; routes are checked against ADA only."""
+    door_cm: Optional[int] = Field(None, ge=40, le=150)
     threshold_mm: int = Field(0, ge=0, le=100)
+    route: Optional[RouteIn] = None
     chair: ChairIn = Field(default_factory=ChairIn)
     standard: Literal["ADA", "EN17210"] = "ADA"
     live: bool = Field(False, strict=True)   # strict: "yes"/1 must not quietly become True
+
+    @model_validator(mode="after")
+    def _one_place(self):
+        if (self.door_cm is None) == (self.route is None):
+            raise ValueError("give exactly one of door_cm or route")
+        if self.route is not None:
+            if self.standard != "ADA":
+                raise ValueError("routes are checked against ADA 2010 only")
+            errors = validate_route(self.route.spec())
+            if errors:
+                raise ValueError("; ".join(errors))
+        return self
+
+    def spec(self):
+        if self.route is not None:
+            return self.route.spec()
+        return DoorSpec(clear_width_cm=self.door_cm, threshold_mm=self.threshold_mm)
+
+
+class RunIn(SpecIn):
+    pass
 
 
 class FixIn(BaseModel):
@@ -88,14 +135,9 @@ class CardIn(BaseModel):
     price_quote: Optional[str] = Field(None, max_length=400)
 
 
-class BriefIn(BaseModel):
-    door_cm: int = Field(..., ge=40, le=150)
-    threshold_mm: int = Field(0, ge=0, le=100)
-    chair: ChairIn = Field(default_factory=ChairIn)
-    standard: Literal["ADA", "EN17210"] = "ADA"
+class BriefIn(SpecIn):
     fix: List[FixIn] = Field(default_factory=list, max_length=5)
     cards: List[CardIn] = Field(default_factory=list, max_length=10)
-    live: bool = Field(False, strict=True)
 
 
 def _live_allowed() -> bool:
@@ -111,7 +153,7 @@ def health():
 def run_endpoint(body: RunIn, request: Request):
     _gate(request, body.live)
     chair = Chair(**body.chair.model_dump())
-    door = DoorSpec(clear_width_cm=body.door_cm, threshold_mm=body.threshold_mm)
+    door = body.spec()
     if not body.live:
         return run_to_dict(run(door, chair, body.standard), chair)
 
@@ -131,7 +173,7 @@ def brief_endpoint(body: BriefIn, request: Request):
     # only a live brief with a fix calls a model, so only that one spends the live budget
     _gate(request, body.live and bool(body.fix))
     chair = Chair(**body.chair.model_dump())
-    before = DoorSpec(clear_width_cm=body.door_cm, threshold_mm=body.threshold_mm)
+    before = body.spec()
     if not body.fix:
         return escalation_brief(before, chair, body.standard)
 

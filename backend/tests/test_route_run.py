@@ -16,7 +16,7 @@ from clearway.twin import twin_for
 
 Q6 = Chair(55, 83, name="Quantum Q6 Edge 3 Stretto", axle_offset_cm=0, turning_diameter_cm=107)
 S_HALL = RouteSpec("s_route", 70, legs=(("E", 300), ("S", 200), ("E", 300)))
-HAMMERHEAD = RouteSpec("hammerhead", 95, bar_cm=90)
+HAMMERHEAD = RouteSpec("hammerhead", 95, bar_cm=95)   # a dead end: no turning space yet
 
 
 class TestRouteGate(unittest.TestCase):
@@ -58,3 +58,14 @@ class TestRouteGate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRouteValidation(unittest.TestCase):
+    def test_valid_and_invalid_routes(self):
+        from clearway.twin import validate_route
+        self.assertEqual(validate_route(S_HALL), [])
+        self.assertEqual(validate_route(HAMMERHEAD), [])
+        u_turn = RouteSpec("s_route", 90, legs=(("E", 300), ("S", 200), ("W", 300)))
+        self.assertTrue(any("U-turn" in e for e in validate_route(u_turn)))
+        self.assertTrue(any("90-degree" in e for e in validate_route(RouteSpec("s_route", 90, legs=(("E", 300), ("E", 200))))))
+        self.assertTrue(any("bar" in e for e in validate_route(RouteSpec("hammerhead", 95, bar_cm=60))))

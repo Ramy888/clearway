@@ -161,3 +161,33 @@ def twin_for(spec) -> Twin:
     if isinstance(spec, RouteSpec):
         return _hammerhead(spec) if spec.kind == "hammerhead" else _s_route(spec)
     return two_room_template(door_cm=spec.clear_width_cm, threshold_mm=spec.threshold_mm)
+
+
+def validate_route(spec: RouteSpec) -> list:
+    """Errors that make a route invalid (empty == valid). Routes may come from a model, so check."""
+    if spec.kind == "hammerhead":
+        errs = ["a hammerhead has no legs"] if spec.legs else []
+        if spec.bar_cm < spec.width_cm:
+            errs.append("the T's bar must be at least as long as its arms are wide")
+        return errs
+    if spec.kind != "s_route":
+        return [f"unknown route kind '{spec.kind}'"]
+    errs = [] if 1 <= len(spec.legs) <= 6 else ["an S-route has 1 to 6 legs"]
+    for d, n in spec.legs:
+        if d not in _DIRS:
+            errs.append(f"unknown direction '{d}'")
+        if not 100 <= n <= 600:
+            errs.append(f"leg length {n} cm is outside 100-600 cm")
+    if errs:
+        return errs
+    turns = []
+    for (a, _), (b, _) in zip(spec.legs, spec.legs[1:]):
+        (ax, ay), (bx, by) = _DIRS[a], _DIRS[b]
+        if ax * bx + ay * by != 0:
+            errs.append(f"{a} then {b} is not a 90-degree turn")
+        else:
+            turns.append(ax * by - ay * bx)
+    if any(t1 == t2 for t1, t2 in zip(turns, turns[1:])):
+        errs.append("turns must alternate left/right: two the same way make a U-turn "
+                    "(ADA 403.5.2), which this version does not model")
+    return errs

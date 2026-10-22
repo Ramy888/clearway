@@ -14,7 +14,8 @@ from . import llm as _llm
 from .catalogue import FixOp
 from .planner import Chair, analyze
 from .rules import DoorSpec, evaluate
-from .twin import two_room_template
+from .orchestrator import describe_spec
+from .twin import twin_for
 
 _NUM = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
@@ -41,12 +42,12 @@ def _fix_text(op: FixOp) -> str:
 
 def _problem(before: DoorSpec, chair: Chair, standard: str) -> List[str]:
     lines = []
-    jam = analyze(two_room_template(before.clear_width_cm, before.threshold_mm), chair)
+    jam = analyze(twin_for(before), chair)
     if jam:
         lines.append(f"- Physics: {jam.detail}")
     for f in evaluate(before, standard):
         if not f.passed:
-            lines.append(f"- {f.clause}: {f.note} (door {before.clear_width_cm} cm, step {before.threshold_mm} mm)")
+            lines.append(f"- {f.clause}: {f.note} ({describe_spec(before)})")
     return lines
 
 
@@ -63,8 +64,7 @@ def _facts(before, after, fix, chair, standard, cards) -> str:
     lines = _header("CLEARWAY contractor brief", chair, standard) + _problem(before, chair, standard)
     lines += ["", "## Approved change (re-checked by the independent Auditor)"]
     lines += [f"- {_fix_text(op)}" for op in fix]
-    lines.append(f"- Result: door {after.clear_width_cm} cm clear, step {after.threshold_mm} mm; "
-                 f"passes the physics re-drive and {standard} code")
+    lines.append(f"- Result: {describe_spec(after)}; passes the physics re-drive and {standard} code")
     priced = [c for c in cards if c.get("kind") == "price" and _safe_url(c.get("url"))]
     if priced:
         lines += ["", "## Cited prices (quoted from the source, not estimated)"]

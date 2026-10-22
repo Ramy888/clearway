@@ -9,7 +9,7 @@ import json
 import re
 from typing import Callable, List, Optional
 
-from .catalogue import CATALOGUE, FixOp
+from .catalogue import CATALOGUE, FixOp, spec_kind
 from . import llm as _llm
 
 SYSTEM = (
@@ -22,10 +22,15 @@ SYSTEM = (
 )
 
 
-def catalogue_text() -> str:
-    """The catalogue as the model sees it — derived from CATALOGUE, never hand-listed."""
+def catalogue_text(kind: Optional[str] = None) -> str:
+    """The catalogue as the model sees it — derived from CATALOGUE, never hand-listed.
+
+    With a kind, only the fixes that can change that kind of space are listed.
+    """
     lines = []
     for fix_id, d in sorted(CATALOGUE.items(), key=lambda kv: kv[1].rank):
+        if kind and kind not in d.applies_to:
+            continue
         params = ", ".join(f"{k}: {t.__name__} in [{lo}, {hi}]"
                            for k, (t, lo, hi) in d.params.items()) or "none"
         req = f"; only if {d.requires} is permitted" if d.requires else ""
@@ -33,9 +38,12 @@ def catalogue_text() -> str:
     return "\n".join(lines)
 
 
-def build_messages(jam, chair, standard, history, context=None) -> list:
-    jam_text = (f"{jam.reason}: {jam.detail} (measured {jam.measured} {jam.unit}, "
-                f"chair needs {jam.required} {jam.unit})") if jam else "route blocked"
+def build_messages(jam, chair, standard, history, context=None, spec=None) -> list:
+    from .orchestrator import describe_spec   # local import: orchestrator is the caller
+    needs = f", chair needs {jam.required} {jam.unit}" if jam and jam.required else ""
+    jam_text = f"{jam.reason}: {jam.detail} (measured {jam.measured} {jam.unit}{needs})" if jam else "route blocked"
+    kind = spec_kind(spec) if spec is not None else "door"
+    current = describe_spec(spec) if spec is not None else "unknown"
     refused = "\n".join(
         f"- {', '.join(op.fix_id + (str(op.params) if op.params else '') for op in diff) or 'empty'}"
         f" -> REFUSED: {reason}"
@@ -43,12 +51,13 @@ def build_messages(jam, chair, standard, history, context=None) -> list:
     ) or "none yet"
     permitted = ", ".join(k for k, v in (context or {}).items() if v) or "none"
     user = (
+        f"Space now: {current}\n"
         f"Jam: {jam_text}\n"
         f"Chair: {chair.name}, {chair.width_cm} x {chair.length_cm} cm, "
         f"casters climb {chair.caster_climb_mm} mm\n"
         f"Standard: {standard}\n"
         f"Permitted special works: {permitted}\n"
-        f"Catalogue:\n{catalogue_text()}\n"
+        f"Catalogue:\n{catalogue_text(kind)}\n"
         f"Already refused by the Auditor:\n{refused}"
     )
     return [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}]
@@ -79,7 +88,7 @@ def make_llm_maker(chat: Optional[Callable] = None, tier: str = "super",
     chat = chat or _llm.chat
 
     def maker(jam, chair, standard, history, spec=None):
-        content, _ = chat(tier, build_messages(jam, chair, standard, history, context),
+        content, _ = chat(tier, build_messages(jam, chair, standard, history, context, spec),
                           max_tokens=2048)
         return parse_ops(content)
     maker.engine = f"{_llm.DISPLAY[tier]} · Nebius Token Factory"

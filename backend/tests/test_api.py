@@ -122,6 +122,45 @@ class TestApi(unittest.TestCase):
         with mock.patch.dict(os.environ, {"CLEARWAY_ALLOW_LIVE": ""}):
             self.assertEqual(self._brief(live=True).status_code, 403)
 
+    Q6 = {"width_cm": 55, "length_cm": 83, "name": "Quantum Q6 Edge 3 Stretto",
+          "axle_offset_cm": 0, "turning_diameter_cm": 107}
+    S70 = {"kind": "s_route", "width_cm": 70, "legs": [["E", 300], ["S", 200], ["E", 300]]}
+
+    def test_route_run_refuses_then_accepts(self):
+        r = self.client.post("/api/run", json={"route": self.S70, "chair": self.Q6})
+        self.assertEqual(r.status_code, 200, r.text)
+        d = r.json()
+        self.assertEqual(d["verdict"]["refused_count"], 1)
+        self.assertEqual(d["before"]["twin"]["kind"], "s_route")
+
+    def test_exactly_one_of_door_or_route(self):
+        self.assertEqual(self.client.post("/api/run", json={"chair": self.Q6}).status_code, 422)
+        both = {"door_cm": 80, "route": self.S70, "chair": self.Q6}
+        self.assertEqual(self.client.post("/api/run", json=both).status_code, 422)
+
+    def test_invalid_routes_are_rejected_at_the_boundary(self):
+        bad = [
+            {"kind": "s_route", "width_cm": 90, "legs": [["E", 300], ["S", 200], ["W", 300]]},   # U-turn
+            {"kind": "s_route", "width_cm": 90, "legs": [["E", 300], ["E", 200]]},               # no turn
+            {"kind": "s_route", "width_cm": 90, "legs": [["E", 300]] * 2 + [["S", 100]] * 6},    # too many
+            {"kind": "s_route", "width_cm": 90, "legs": [["X", 300]]},                           # bad dir
+            {"kind": "hammerhead", "width_cm": 95, "bar_cm": 60},                                # bar < arms
+        ]
+        for route in bad:
+            self.assertEqual(self.client.post("/api/run", json={"route": route}).status_code, 422, route)
+
+    def test_routes_are_ada_only(self):
+        r = self.client.post("/api/run", json={"route": self.S70, "standard": "EN17210"})
+        self.assertEqual(r.status_code, 422)
+
+    def test_brief_for_a_route_fix_and_kind_mismatch(self):
+        ok = {"route": self.S70, "chair": self.Q6, "fix": [{"fix_id": "widen_corridor", "params": {"target_cm": 95}}]}
+        r = self.client.post("/api/brief", json=ok)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIn("95 cm", r.json()["markdown"])
+        wrong = dict(ok, fix=[{"fix_id": "widen_frame", "params": {"target_cm": 95}}])
+        self.assertEqual(self.client.post("/api/brief", json=wrong).status_code, 409)
+
     def test_live_must_be_a_real_boolean(self):
         # lax coercion would turn "yes"/1 into True, which a proxy counting only `true` would miss
         for value in ("yes", 1, "true"):
