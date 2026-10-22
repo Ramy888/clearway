@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "clearway-demo",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-10-05",
+  "observability": { "enabled": true },
+  // The account is pinned by CLOUDFLARE_ACCOUNT_ID in the gitignored .env, never here.
+  "vars": { "LIVE_RUNS_PER_DAY": "15", "LIVE_RUNS_TOTAL": "600" },
+  "containers": [
+    {
+      "class_name": "Clearway",
+      "image": "../../Dockerfile",
+      "image_build_context": "../..",
+      "instance_type": "basic",
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "CLEARWAY", "class_name": "Clearway" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Clearway"] }]
+}

@@ -71,7 +71,7 @@ class RunIn(BaseModel):
     threshold_mm: int = Field(0, ge=0, le=100)
     chair: ChairIn = Field(default_factory=ChairIn)
     standard: Literal["ADA", "EN17210"] = "ADA"
-    live: bool = False
+    live: bool = Field(False, strict=True)   # strict: "yes"/1 must not quietly become True
 
 
 class FixIn(BaseModel):
@@ -95,7 +95,7 @@ class BriefIn(BaseModel):
     standard: Literal["ADA", "EN17210"] = "ADA"
     fix: List[FixIn] = Field(default_factory=list, max_length=5)
     cards: List[CardIn] = Field(default_factory=list, max_length=10)
-    live: bool = False
+    live: bool = Field(False, strict=True)
 
 
 def _live_allowed() -> bool:

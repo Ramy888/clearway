@@ -122,6 +122,12 @@ class TestApi(unittest.TestCase):
         with mock.patch.dict(os.environ, {"CLEARWAY_ALLOW_LIVE": ""}):
             self.assertEqual(self._brief(live=True).status_code, 403)
 
+    def test_live_must_be_a_real_boolean(self):
+        # lax coercion would turn "yes"/1 into True, which a proxy counting only `true` would miss
+        for value in ("yes", 1, "true"):
+            self.assertEqual(self.client.post("/api/run", json={"door_cm": 65, "live": value}).status_code, 422)
+            self.assertEqual(self._brief(live=value).status_code, 422)
+
     def test_live_run_is_refused_unless_allowed(self):
         with mock.patch.dict(os.environ, {"CLEARWAY_ALLOW_LIVE": ""}):
             r = self.client.post("/api/run", json={"door_cm": 65, "live": True})
