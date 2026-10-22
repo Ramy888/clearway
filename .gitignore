@@ -1,0 +1,26 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# node / web
+node_modules/
+dist/
+.wrangler/
+.DS_Store
+
+# AI instructions, planning notes and personal drafts — kept local, never pushed
+CLAUDE.md
+AGENTS.md
+.claude/
+.agents/
+agent/
+skills-lock.json
+tasks/
+docs/SPEC.md
