@@ -54,27 +54,43 @@ def _footprint(cx, cy, heading, wc, lc):
     return cx - lx // 2, cy - ly // 2, lx, ly
 
 
-def _fits(blocked, W, H, state, wc, lc) -> bool:
-    cx, cy, h = state
-    x0, y0, lx, ly = _footprint(cx, cy, h, wc, lc)
-    if x0 < 0 or y0 < 0 or x0 + lx > W or y0 + ly > H:
-        return False
-    for xx in range(x0, x0 + lx):
-        for yy in range(y0, y0 + ly):
-            if (xx, yy) in blocked:
-                return False
-    return True
+class _Grid:
+    """Summed-area table over blocked cells: any rectangle's blocked count in O(1).
+
+    The hosted container has a quarter of a CPU; checking every footprint cell made a run
+    take ~6 s there.
+    """
+
+    def __init__(self, blocked, W: int, H: int):
+        self.W, self.H = W, H
+        sat = [[0] * (W + 1) for _ in range(H + 1)]
+        for y in range(H):
+            row = 0
+            for x in range(W):
+                row += (x, y) in blocked
+                sat[y + 1][x + 1] = sat[y][x + 1] + row
+        self._sat = sat
+
+    def free(self, x0: int, y0: int, lx: int, ly: int) -> bool:
+        if x0 < 0 or y0 < 0 or x0 + lx > self.W or y0 + ly > self.H:
+            return False
+        s = self._sat
+        return s[y0 + ly][x0 + lx] - s[y0][x0 + lx] - s[y0 + ly][x0] + s[y0][x0] == 0
 
 
-def _neighbors(state, blocked, W, H, wc, lc):
+def _fits(grid: _Grid, state, wc, lc) -> bool:
+    return grid.free(*_footprint(*state, wc, lc))
+
+
+def _neighbors(state, grid: _Grid, wc, lc):
     cx, cy, h = state
     out = []
     fwd = (cx + _DX[h], cy + _DY[h], h)
-    if _fits(blocked, W, H, fwd, wc, lc):
+    if _fits(grid, fwd, wc, lc):
         out.append(fwd)
     for nh in ((h + 1) % 4, (h - 1) % 4):   # turn in place needs clearance
         turned = (cx, cy, nh)
-        if _fits(blocked, W, H, turned, wc, lc):
+        if _fits(grid, turned, wc, lc):
             out.append(turned)
     return out
 
@@ -107,9 +123,9 @@ def _reconstruct(came, s):
 def plan(twin: Twin, chair: Chair) -> Plan:
     """A* over (x, y, heading). On a jam, the path to the closest reachable pose."""
     wc, lc = chair.width_cells, chair.length_cells
-    blocked, W, H = _effective_blocked(twin, chair), twin.W, twin.H
+    grid = _Grid(_effective_blocked(twin, chair), twin.W, twin.H)
     start, goal = twin.start, twin.goal
-    if not _fits(blocked, W, H, start, wc, lc):
+    if not _fits(grid, start, wc, lc):
         return Plan(False, [start])
     openh = [(_heur(start, goal), 0, start)]
     best = {start: 0}
@@ -123,7 +139,7 @@ def plan(twin: Twin, chair: Chair) -> Plan:
             return Plan(True, _reconstruct(came, s))
         if (_heur(s, goal), g) < closest[:2]:
             closest = (_heur(s, goal), g, s)
-        for ns in _neighbors(s, blocked, W, H, wc, lc):
+        for ns in _neighbors(s, grid, wc, lc):
             ng = g + 1
             if ng < best.get(ns, 1 << 30):
                 best[ns] = ng
