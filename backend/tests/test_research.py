@@ -61,6 +61,19 @@ class TestCards(unittest.TestCase):
         self.assertEqual(c.price_range, "$600 to $2,000")
         self.assertIn("homeowners pay", c.price_quote)
 
+    def test_a_stated_range_beats_a_single_worst_case_figure(self):
+        # Seen live: "$5,000" (a structural worst case) was shown instead of the page's range.
+        live = {"title": "Widening a Doorway for Aging in Place | Aging Safe at Home",
+                "url": "https://agingsafehome.com/widening-doorway-for-aging-in-place",
+                "content": "As a contractor, widening a doorway for wheelchair access is often the first thing "
+                           "families ask me about. They assume it's a simple Saturday afternoon job. I wish that "
+                           "were true. Let's walk through why widening that “simple 6 inches” can go from a "
+                           "$1,000 retrofit to a $5,000 “structural” job. If you find yourself in Scenario B "
+                           "and the $5,000 price tag isn't in the budget, don't give up on home accessibility."}
+        c = price_card("widen_frame", post=fake_post([live]))
+        self.assertEqual(c.price_range, "$1,000 to $5,000")
+        self.assertIn("$1,000 retrofit to a $5,000", c.price_quote)
+
     def test_irrelevant_page_with_a_price_is_ignored(self):
         # Seen live: a cost-of-living page surfaced "$798" for widen_frame.
         junk = {"title": "Cost of Living in San Francisco", "url": "https://junk.example",

@@ -66,14 +66,36 @@ _PRICE = re.compile(rf"{_CUR}\s?\d[\d,.]*(?:\s?(?:-|–|to)\s?{_CUR}?\s?\d[\d,.]
 _COST_VERB = re.compile(r"\b(?:pay|pays|paid|cost|costs|price|priced|prices|charge|charges)\b", re.I)
 
 
+# "$1,000 retrofit to a $5,000": a range with a few words between the two figures.
+_AMOUNT = rf"{_CUR}\s?\d[\d,]*(?:\.\d+)?"
+_SPACED_RANGE = re.compile(rf"({_AMOUNT})(?:\s+\S+){{0,3}}?\s+(?:to|-|–)\s+(?:an?\s+)?({_AMOUNT})", re.I)
+
+
+def _figure(sentence: str):
+    """(display text, is_range) for the price stated in one sentence, or None."""
+    m = _PRICE.search(sentence)
+    if not m:
+        return None
+    text = m.group(0).strip().rstrip(".,")
+    if re.search(r"-|–|\bto\b", text):
+        return text, True
+    spaced = _SPACED_RANGE.search(sentence)
+    if spaced:
+        return f"{spaced.group(1)} to {spaced.group(2)}", True
+    return text, False
+
+
 def _price_range(text: str):
-    """(range, sentence) — preferring a sentence that talks about paying, else the first figure."""
-    sentences = re.split(r"(?<=[.!?])\s+", text or "")
-    for s in sorted(sentences, key=lambda s: not _COST_VERB.search(s)):  # stable: cost sentences first
-        m = _PRICE.search(s)
-        if m:
-            return m.group(0).strip().rstrip(".,"), s.strip()
-    return None, None
+    """(range, sentence): a stated range beats a single figure (often a worst case), then a
+    sentence about paying, then the earliest."""
+    best = None
+    for i, s in enumerate(re.split(r"(?<=[.!?])\s+", text or "")):
+        fig = _figure(s)
+        if fig:
+            key = (fig[1], bool(_COST_VERB.search(s)), -i)
+            if best is None or key > best[0]:
+                best = (key, fig[0], s.strip())
+    return (best[1], best[2]) if best else (None, None)
 
 
 def _first(results: List[dict]) -> dict:
