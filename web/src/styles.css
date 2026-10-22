@@ -143,6 +143,13 @@ a.card:hover { border-color: var(--link); }
 .card-text { color: var(--muted); }
 .card-src { color: var(--link); font-size: 12px; }
 
+.brief { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 14px; background: var(--panel-2); }
+.brief-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.brief h3 { margin: 0; font-size: 14px; }
+.brief pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12.5px/1.5 var(--mono); margin: 8px 0 0; max-height: 360px; overflow: auto; }
+.ghost { border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 6px; padding: 5px 10px; font-size: 13px; }
+.small { font-size: 12px; margin: 6px 0 0; }
+
 .foot { margin-top: 20px; color: var(--muted); font-size: 13px; text-align: center; }
 
 @media (prefers-reduced-motion: reduce) {

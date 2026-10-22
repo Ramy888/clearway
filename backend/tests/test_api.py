@@ -33,6 +33,36 @@ class TestApi(unittest.TestCase):
         bad_chair = {"door_cm": 80, "chair": {"width_cm": 500, "length_cm": 110}}
         self.assertEqual(self.client.post("/api/run", json=bad_chair).status_code, 422)
 
+    def _brief(self, **over):
+        body = {"door_cm": 65, "chair": {"width_cm": 70, "length_cm": 110},
+                "fix": [{"fix_id": "widen_frame", "params": {"target_cm": 82}}], "cards": []}
+        body.update(over)
+        return self.client.post("/api/brief", json=body)
+
+    def test_brief_for_an_audited_fix(self):
+        r = self._brief()
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("82 cm", r.json()["markdown"])
+
+    def test_brief_refuses_a_fix_the_auditor_rejects(self):
+        r = self._brief(fix=[{"fix_id": "offset_hinges", "params": {}}])
+        self.assertEqual(r.status_code, 409)
+
+    def test_brief_drops_non_http_card_links(self):
+        card = {"kind": "price", "subject": "widen_frame", "title": "x", "url": "javascript:alert(1)",
+                "price_range": "$1", "price_quote": "pay $1"}
+        md = self._brief(cards=[card]).json()["markdown"]
+        self.assertNotIn("javascript:", md)
+
+    def test_escalation_brief_when_no_fix(self):
+        r = self._brief(fix=[])
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("contractor", r.json()["markdown"].lower())
+
+    def test_live_brief_is_refused_unless_allowed(self):
+        with mock.patch.dict(os.environ, {"CLEARWAY_ALLOW_LIVE": ""}):
+            self.assertEqual(self._brief(live=True).status_code, 403)
+
     def test_live_run_is_refused_unless_allowed(self):
         with mock.patch.dict(os.environ, {"CLEARWAY_ALLOW_LIVE": ""}):
             r = self.client.post("/api/run", json={"door_cm": 65, "live": True})

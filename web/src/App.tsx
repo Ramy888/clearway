@@ -1,8 +1,20 @@
 import { useState, type ChangeEvent } from "react";
 import { Ledger } from "./Ledger";
 import { TwinView } from "./TwinView";
-import { CHAIRS, PRESETS, describeFix, refusalSummary, runScenario } from "./model";
-import type { ChairSpec, RunPayload } from "./types";
+import { CHAIRS, PRESETS, describeFix, fetchBrief, refusalSummary, runScenario, type Brief } from "./model";
+import type { Card, ChairSpec, RunPayload, RunRequest } from "./types";
+
+function download(markdown: string) {
+  const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "clearway-contractor-brief.md";
+  try {
+    a.click();
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+}
 
 type Standard = "ADA" | "EN17210";
 
@@ -17,20 +29,22 @@ export default function App() {
   const [phase, setPhase] = useState<"before" | "after">("before");
   const [approved, setApproved] = useState(false);
   const [runId, setRunId] = useState(0);
+  const [lastReq, setLastReq] = useState<RunRequest | null>(null);
+  const [brief, setBrief] = useState<Brief | null>(null);
+  const [briefBusy, setBriefBusy] = useState(false);
+  const [briefError, setBriefError] = useState<string | null>(null);
 
   async function testDrive() {
     const preset = PRESETS.find((p) => p.id === presetId)!;
+    const req: RunRequest = { door_cm: preset.door_cm, threshold_mm: preset.threshold_mm, chair, standard, live };
     setBusy(true);
     setError(null);
     setApproved(false);
+    setBrief(null);
+    setBriefError(null);
     try {
-      const payload = await runScenario({
-        door_cm: preset.door_cm,
-        threshold_mm: preset.threshold_mm,
-        chair,
-        standard,
-        live,
-      });
+      const payload = await runScenario(req);
+      setLastReq(req);
       setData(payload);
       setPhase("before");
       setRunId((n) => n + 1);
@@ -48,6 +62,25 @@ export default function App() {
   const scene = data ? (phase === "after" && data.after ? data.after : data.before) : null;
   const summary = data ? refusalSummary(data.ledger) : null;
   const fix = data?.verdict.accepted_fix ?? [];
+
+  async function requestBrief(withFix: typeof fix) {
+    if (!lastReq || !data) return;
+    const cards = data.ledger.map((e) => e.card).filter((c): c is Card => c?.kind === "price");
+    setBriefBusy(true);
+    setBriefError(null);
+    try {
+      setBrief(await fetchBrief({ ...lastReq, fix: withFix, cards }));
+    } catch (e) {
+      setBriefError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBriefBusy(false);
+    }
+  }
+
+  function approve() {
+    setApproved(true);
+    void requestBrief(fix);
+  }
 
   return (
     <div className="app">
@@ -163,17 +196,43 @@ export default function App() {
                   </p>
                 )}
                 {data.verdict.escalated && (
-                  <p className="muted">No catalogue fix cleared both checks. A contractor brief is the honest next step.</p>
+                  <>
+                    <p className="muted">No catalogue fix cleared both checks. A contractor brief is the honest next step.</p>
+                    {!brief && (
+                      <button className="primary" onClick={() => void requestBrief([])} disabled={briefBusy}>
+                        Get the contractor brief
+                      </button>
+                    )}
+                  </>
                 )}
                 {fix.length > 0 &&
                   (approved ? (
-                    <p className="approved">Approved. The contractor brief comes next.</p>
+                    <p className="approved">{briefBusy ? "Approved. Writing the contractor brief…" : "Approved."}</p>
                   ) : (
-                    <button className="primary" onClick={() => setApproved(true)}>
+                    <button className="primary" onClick={approve}>
                       Approve this fix
                     </button>
                   ))}
+                {briefError && (
+                  <p role="alert" className="error">
+                    {briefError}
+                  </p>
+                )}
               </div>
+              {brief && (
+                <section className="brief" aria-label="Contractor brief">
+                  <div className="brief-head">
+                    <h3>Contractor brief</h3>
+                    <button className="ghost" onClick={() => download(brief.markdown)}>
+                      Download .md
+                    </button>
+                  </div>
+                  {brief.narrative_source === "ultra" && (
+                    <p className="muted small">Plain-words paragraph by Nemotron Ultra; every figure in it is checked against the facts.</p>
+                  )}
+                  <pre>{brief.markdown}</pre>
+                </section>
+              )}
               <Ledger events={data.ledger} />
             </>
           ) : (

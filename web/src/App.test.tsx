@@ -2,8 +2,16 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import App from "./App";
 import fixture from "./fixtures/run65.json"; // a real /api/run payload from the backend
 
+const BRIEF = { markdown: "# CLEARWAY contractor brief\n- widen frame to 82 cm", narrative_source: "none", withheld: false };
+
+/** A fake server: /api/brief returns BRIEF, everything else returns the given /api/run reply. */
 function reply(ok: boolean, status: number, body: unknown) {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok, status, json: async () => body }));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) =>
+      url === "/api/brief" ? { ok: true, status: 200, json: async () => BRIEF } : { ok, status, json: async () => body },
+    ),
+  );
 }
 
 beforeEach(() => {
@@ -34,7 +42,14 @@ it("plays the fixed home and gates on human approval", async () => {
   fireEvent.click(screen.getByRole("tab", { name: /after fix/i }));
   expect(screen.getByRole("status").textContent).toMatch(/clears/i);
   fireEvent.click(screen.getByRole("button", { name: /approve/i }));
-  expect(screen.getByText(/approved/i)).toBeTruthy();
+  const brief = await screen.findByRole("region", { name: /contractor brief/i });
+  expect(brief.textContent).toContain("widen frame to 82 cm");
+  expect(screen.queryByRole("button", { name: /approve/i })).toBeNull();
+  // the server gets the audited fix to re-check, not prose
+  const call = vi.mocked(fetch).mock.calls.find(([u]) => u === "/api/brief")!;
+  const sent = JSON.parse((call[1] as RequestInit).body as string);
+  expect(sent.fix).toEqual([{ fix_id: "widen_frame", params: { target_cm: 82 } }]);
+  expect(sent.door_cm).toBe(65);
 });
 
 it("shows the server's reason instead of a blank screen", async () => {

@@ -1,4 +1,4 @@
-import type { ChairSpec, LedgerEvent, Pose, RunPayload, RunRequest } from "./types";
+import type { Card, ChairSpec, LedgerEvent, Pose, RunPayload, RunRequest } from "./types";
 
 const cells = (cm: number, cellCm: number) => Math.max(1, Math.round(cm / cellCm));
 
@@ -26,18 +26,38 @@ export function refusalSummary(ledger: LedgerEvent[]) {
 
 type FetchFn = (url: string, init: RequestInit) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
-export async function runScenario(req: RunRequest, fetchFn: FetchFn = fetch): Promise<RunPayload> {
-  const res = await fetchFn("/api/run", {
+async function postJson<T>(url: string, payload: unknown, fetchFn: FetchFn): Promise<T> {
+  const res = await fetchFn(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(req),
+    body: JSON.stringify(payload),
   });
   const body = (await res.json().catch(() => ({}))) as { detail?: unknown };
   if (!res.ok) {
     const detail = typeof body.detail === "string" ? body.detail : res.status === 422 ? "invalid input" : `HTTP ${res.status}`;
     throw new Error(detail);
   }
-  return body as RunPayload;
+  return body as T;
+}
+
+export function runScenario(req: RunRequest, fetchFn: FetchFn = fetch): Promise<RunPayload> {
+  return postJson<RunPayload>("/api/run", req, fetchFn);
+}
+
+export interface Brief {
+  markdown: string;
+  narrative_source: "ultra" | "none";
+  withheld: boolean;
+}
+
+export interface BriefRequest extends RunRequest {
+  fix: { fix_id: string; params: Record<string, number> }[];
+  cards: Card[];
+}
+
+/** The server re-audits `fix` before writing; an empty fix asks for the escalation brief. */
+export function fetchBrief(req: BriefRequest, fetchFn: FetchFn = fetch): Promise<Brief> {
+  return postJson<Brief>("/api/brief", req, fetchFn);
 }
 
 /** Evidence URLs come from web search results: only ever link http(s). */
