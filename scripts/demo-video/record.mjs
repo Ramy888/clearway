@@ -28,14 +28,20 @@ const scrollToEl = async (sel, text = "", offset = 120, wait = 1300) => {
   if (y == null) throw new Error(`missing ${sel} ${text}`);
   await scrollTo(y - offset); await sleep(wait);
 };
-// click a control, first scrolling it into view if the camera can't see it
+// click a control, first scrolling it into view if the camera can't see it. The pointer moves
+// there, then the element itself is clicked: after the long brief renders, CDP mouse presses
+// landed ~36 px above the pointer (picked the wrong preset).
 const press = async (text, opts = {}) => {
-  const p = await b.find(text, opts);
-  if (p && (p.y < 40 || p.y > H - 40)) {
+  let p = await b.find(text, opts);
+  if (!p) throw new Error("not found: " + text);
+  if (p.y < 40 || p.y > H - 40) {
     await b.evaluate(`document.querySelector('[data-rec-target]').scrollIntoView({ behavior: "smooth", block: "center" })`);
     await sleep(900);
+    p = await b.find(text, opts);
   }
-  await b.click(text, opts);
+  await b.moveTo(p);
+  await b.evaluate(`document.querySelector('[data-rec-target]').click()`);
+  await sleep(150);
 };
 const waitFor = async (expr, maxMs = 90_000) => {
   const t0 = Date.now();
@@ -56,6 +62,8 @@ try {
 await b.goto(URL_, 3500);
 await b.startRec();
 
+// FROM=hallways records only sections 4-6 (offline, free) to splice onto an earlier take
+if (process.env.FROM !== "hallways") {
 // 1. What it is
 cue("CLEARWAY: test-drive a home in a wheelchair before you change it");
 await sleep(2500); await hover(170, 170); await sleep(2000);
@@ -89,11 +97,12 @@ cue("Tavily evidence: the code clause and a cited contractor price");
 await scrollToEl(".card", "", 260, 1500); await hover(1250, 300); await sleep(4000);
 await scrollTo(0); await sleep(1200);
 cue("You approve; the brief's figures come from code, Nemotron 3 Ultra writes the plain words");
-await press("Approve this fix");
+await sleep(800); await press("Approve this fix", { gone: true });   // a click lost to a still-moving scroll is retried
 b.pause(); await waitFor(`!!document.querySelector('.brief')`); await b.resume();
 await scrollToEl(".brief", "", 120, 1500); await hover(1250, 400); await sleep(6000);
 await scrollTo(0); await sleep(1000);
 await press("Live agents"); await sleep(800);   // hallways below run offline
+}
 
 // 4. An S-shaped hallway: wheelchair kinematics, a real chair from its spec
 cue("Hallways need real wheelchair physics: the chair turns about its drive axle and drives arcs");
