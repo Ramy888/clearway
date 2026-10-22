@@ -23,6 +23,7 @@ _DY = (0, 1, 0, -1)
 class Chair:
     width_cm: int
     length_cm: int
+    caster_climb_mm: int = 20   # step height the front casters can roll over
     name: str = "chair"
 
     @property
@@ -37,8 +38,9 @@ class Chair:
 @dataclass(frozen=True)
 class Jam:
     reason: str          # "clear_width" | "turn_radius" | "threshold"
-    measured_cm: int     # what the home actually offers
-    required_cm: int     # what the chair needs
+    measured: int        # what the home actually offers (in `unit`)
+    required: int        # what the chair needs (in `unit`)
+    unit: str = "cm"
     detail: str = ""
 
 
@@ -80,10 +82,17 @@ def _heur(state, goal):
     return math.hypot(state[0] - goal[0], state[1] - goal[1])
 
 
+def _effective_blocked(twin: Twin, chair: Chair):
+    """Grid cells the chair cannot occupy: walls, plus any threshold it can't climb."""
+    if twin.thresholds and twin.threshold_mm > chair.caster_climb_mm:
+        return twin.blocked | twin.thresholds
+    return twin.blocked
+
+
 def drive(twin: Twin, chair: Chair) -> bool:
     """True if the chair can reach the goal from the start, else False (it jams)."""
     wc, lc = chair.width_cells, chair.length_cells
-    blocked, W, H = twin.blocked, twin.W, twin.H
+    blocked, W, H = _effective_blocked(twin, chair), twin.W, twin.H
     start, goal = twin.start, twin.goal
     if not _fits(blocked, W, H, start, wc, lc):
         return False
@@ -107,19 +116,29 @@ def analyze(twin: Twin, chair: Chair) -> Jam | None:
     """Return None if the chair reaches the goal, else a classified Jam."""
     if drive(twin, chair):
         return None
-    # Jammed: measure the real opening from the grid and classify.
+    # Jammed: measure the real opening from the grid and classify, in priority order.
     gap_cells = max((max_free_run(twin, c) for c in twin.wall_cols), default=0)
     measured_cm = gap_cells * twin.cell_cm
     if gap_cells < chair.width_cells:
         return Jam(
             reason="clear_width",
-            measured_cm=measured_cm,
-            required_cm=chair.width_cm,
+            measured=measured_cm,
+            required=chair.width_cm,
+            unit="cm",
             detail=f"doorway clear width {measured_cm} cm < chair width {chair.width_cm} cm",
+        )
+    if twin.thresholds and twin.threshold_mm > chair.caster_climb_mm:
+        return Jam(
+            reason="threshold",
+            measured=twin.threshold_mm,
+            required=chair.caster_climb_mm,
+            unit="mm",
+            detail=f"doorway step {twin.threshold_mm} mm > casters climb {chair.caster_climb_mm} mm",
         )
     return Jam(
         reason="turn_radius",
-        measured_cm=measured_cm,
-        required_cm=chair.width_cm,
+        measured=measured_cm,
+        required=chair.width_cm,
+        unit="cm",
         detail="chair cannot maneuver through the route despite adequate door width",
     )

@@ -1,8 +1,9 @@
-"""T1: a footprint-aware wheelchair either clears a doorway or it jams.
+"""T1/T2: a footprint-aware wheelchair either clears the route or it jams.
 
-This is the kill-switch spike: the whole product rests on the planner telling the
-truth about where a chair physically cannot go. A door wider than the chair must be
-passable; a door narrower than the chair must jam with reason "clear_width".
+The kill-switch spike: the product rests on the planner telling the truth about where
+a chair physically cannot go, and why. A door wider than the chair is passable; a
+narrower one jams on clear_width; a wide door with a high threshold jams on threshold
+unless the chair's casters can climb it.
 """
 import unittest
 
@@ -10,24 +11,36 @@ from clearway.twin import two_room_template
 from clearway.planner import Chair, analyze
 
 
-class TestFootprintPlanner(unittest.TestCase):
+class TestClearWidth(unittest.TestCase):
     def setUp(self):
-        # A common power wheelchair: 70 cm wide, 110 cm long.
         self.power = Chair(width_cm=70, length_cm=110, name="power")
 
     def test_wide_door_is_passable(self):
-        jam = analyze(two_room_template(door_cm=90), self.power)
-        self.assertIsNone(jam, "a 90 cm door should be passable by a 70 cm chair")
+        self.assertIsNone(analyze(two_room_template(door_cm=90), self.power))
 
     def test_narrow_door_jams_on_clear_width(self):
         jam = analyze(two_room_template(door_cm=65), self.power)
-        self.assertIsNotNone(jam, "a 65 cm door must jam a 70 cm chair")
+        self.assertIsNotNone(jam)
         self.assertEqual(jam.reason, "clear_width")
-        self.assertEqual(jam.measured_cm, 65)
+        self.assertEqual(jam.measured, 65)
+        self.assertEqual(jam.unit, "cm")
 
     def test_door_equal_to_chair_width_just_passes(self):
-        jam = analyze(two_room_template(door_cm=70), self.power)
-        self.assertIsNone(jam, "a door equal to the chair width should just pass")
+        self.assertIsNone(analyze(two_room_template(door_cm=70), self.power))
+
+
+class TestThreshold(unittest.TestCase):
+    def test_high_threshold_jams_a_wide_door(self):
+        chair = Chair(width_cm=70, length_cm=110, caster_climb_mm=20)
+        jam = analyze(two_room_template(door_cm=90, threshold_mm=40), chair)
+        self.assertIsNotNone(jam, "a 40 mm step must stop casters that climb only 20 mm")
+        self.assertEqual(jam.reason, "threshold")
+        self.assertEqual(jam.measured, 40)
+        self.assertEqual(jam.unit, "mm")
+
+    def test_climbable_threshold_passes(self):
+        chair = Chair(width_cm=70, length_cm=110, caster_climb_mm=50)
+        self.assertIsNone(analyze(two_room_template(door_cm=90, threshold_mm=40), chair))
 
 
 if __name__ == "__main__":

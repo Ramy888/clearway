@@ -20,14 +20,16 @@ class Twin:
     door_cm: int                     # the clear width of the doorway on the route
     wall_cols: Tuple[int, ...] = ()  # x-columns of the interior wall (to measure the gap)
     cell_cm: int = CELL_CM
+    thresholds: FrozenSet[Tuple[int, int]] = frozenset()  # doorway cells carrying a step
+    threshold_mm: int = 0            # height of that step
 
 
-def two_room_template(door_cm: int) -> Twin:
+def two_room_template(door_cm: int, threshold_mm: int = 0) -> Twin:
     """Two 300x300 cm rooms separated by a 10 cm wall with a single doorway.
 
     The chair starts in the centre of the left room and must reach the centre of the
-    right room. Only the door's clear width varies, so the planner's verdict isolates
-    the doorway as the cause.
+    right room. The door's clear width and an optional threshold step vary, so the
+    planner's verdict isolates the doorway as the cause.
     """
     room = 300 // CELL_CM          # 60 cells per room side
     wall_thick = 10 // CELL_CM     # 2 cells
@@ -46,9 +48,13 @@ def two_room_template(door_cm: int) -> Twin:
     gap_cells = round(door_cm / CELL_CM)
     gap_lo = mid - gap_cells // 2
     gap_hi = gap_lo + gap_cells
+    thresholds = set()
     for cx in wall_cols:
         for y in range(1, H - 1):
-            if not (gap_lo <= y < gap_hi):
+            if gap_lo <= y < gap_hi:
+                if threshold_mm > 0:
+                    thresholds.add((cx, y))
+            else:
                 blocked.add((cx, y))
 
     start = (1 + room // 2, mid, 0)                     # centre of left room, facing +x
@@ -56,6 +62,7 @@ def two_room_template(door_cm: int) -> Twin:
     return Twin(
         blocked=frozenset(blocked), W=W, H=H, start=start, goal=goal,
         door_cm=door_cm, wall_cols=wall_cols,
+        thresholds=frozenset(thresholds), threshold_mm=threshold_mm,
     )
 
 
