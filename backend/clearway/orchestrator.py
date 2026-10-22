@@ -21,6 +21,7 @@ class Event:
     action: str
     ok: bool
     detail: str
+    card: Optional[object] = None   # display evidence (clause/price); never reaches the Auditor
 
 
 @dataclass(frozen=True)
@@ -62,7 +63,7 @@ def stub_maker(jam, chair: Chair, standard: str, history) -> Optional[List[FixOp
 
 def run(before: DoorSpec, chair: Chair, standard: str = "ADA",
         context: Optional[dict] = None, max_rounds: int = 2,
-        maker: Optional[Callable] = None) -> RunResult:
+        maker: Optional[Callable] = None, research=None) -> RunResult:
     maker = maker or stub_maker
     ledger: List[Event] = []
     twin = two_room_template(door_cm=before.clear_width_cm, threshold_mm=before.threshold_mm)
@@ -78,7 +79,8 @@ def run(before: DoorSpec, chair: Chair, standard: str = "ADA",
 
     failed = [f for f in evaluate(before, standard) if not f.passed]
     if failed:
-        ledger.append(Event("Inspector", "cite", False, f"{failed[0].clause}: {failed[0].note}"))
+        card = research.clause(failed[0].clause) if research else None
+        ledger.append(Event("Inspector", "cite", False, f"{failed[0].clause}: {failed[0].note}", card))
 
     history = []   # (diff, refusal reason) fed back to the maker
     refused = 0
@@ -86,7 +88,8 @@ def run(before: DoorSpec, chair: Chair, standard: str = "ADA",
         diff = maker(jam, chair, standard, history)
         if diff is None:
             break
-        ledger.append(Event("Builder", "propose", True, _describe(diff)))
+        card = research.price(diff[0].fix_id) if research and diff else None
+        ledger.append(Event("Builder", "propose", True, _describe(diff), card))
         res = audit(before, diff, chair, standard, context)
         if res.accepted:
             ledger.append(Event("Auditor", "accept", True,

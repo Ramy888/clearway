@@ -40,15 +40,21 @@ class FixDef:
     requires: Optional[str] = None   # a context flag that must be truthy
     cost_key: str = ""               # key for Tavily price lookup later
     rank: int = 0                    # relative cost, 1 = cheapest (until Tavily prices land)
+    phrase: str = ""                 # how a contractor would search for this job
 
 
 CATALOGUE: Dict[str, FixDef] = {
-    "remove_threshold":   FixDef(_remove_threshold, cost_key="remove_threshold", rank=1),
-    "offset_hinges":      FixDef(_offset_hinges, cost_key="offset_hinges", rank=2),
-    "reverse_swing":      FixDef(_reverse_swing, cost_key="reverse_swing", rank=3),
-    "widen_frame":        FixDef(_widen_frame, params={"target_cm": (int, 60, 120)}, cost_key="widen_frame", rank=4),
+    "remove_threshold":   FixDef(_remove_threshold, cost_key="remove_threshold", rank=1,
+                                 phrase="remove a door threshold"),
+    "offset_hinges":      FixDef(_offset_hinges, cost_key="offset_hinges", rank=2,
+                                 phrase="install offset door hinges"),
+    "reverse_swing":      FixDef(_reverse_swing, cost_key="reverse_swing", rank=3,
+                                 phrase="reverse a door swing"),
+    "widen_frame":        FixDef(_widen_frame, params={"target_cm": (int, 60, 120)}, cost_key="widen_frame",
+                                 rank=4, phrase="widen an interior doorway door frame"),
     "remove_wall_segment": FixDef(_remove_wall_segment, requires="allow_wall_removal",
-                                  cost_key="remove_wall_segment", rank=5),
+                                  cost_key="remove_wall_segment", rank=5,
+                                  phrase="remove a non-load-bearing interior wall"),
 }
 
 
