@@ -102,14 +102,37 @@ def _neighbors(state, grid: _Grid, wc, lc):
     return out
 
 
-@lru_cache(maxsize=64)
+# Forward step per heading for 16-heading twins: the smallest grid vector within ~4 degrees.
+_BASE16 = ((1, 0), (2, 1), (1, 1), (1, 2))   # 0, 22.5, 45, 67.5 degrees
+
+
+@lru_cache(maxsize=4)
+def _step_vectors(n: int):
+    if n == 8:
+        return tuple(zip(_DX8, _DY8))
+    out = []
+    for i in range(16):
+        q, r = divmod(i, 4)
+        x, y = _BASE16[r]
+        for _ in range(q):        # rotate a quarter turn: +x -> +y
+            x, y = -y, x
+        out.append((x, y))
+    return tuple(out)
+
+
 def _mask_runs(wc: int, lc: int, h8: int):
-    """Cells under the chair at a diagonal heading, as row runs (dy, dx0, width) from the pivot.
+    """Row runs of the footprint at 8-heading index `h8` (kept for the 8-heading API)."""
+    return _mask_runs_deg(wc, lc, 45.0 * h8)
+
+
+@lru_cache(maxsize=256)
+def _mask_runs_deg(wc: int, lc: int, deg: float):
+    """Cells under the chair at an angled heading, as row runs (dy, dx0, width) from the pivot.
 
     A cell is covered when its centre lies inside the rotated rectangle (length along the
     heading, width across it). Rows let the summed-area table check each run in O(1).
     """
-    ang = math.radians(45 * h8)
+    ang = math.radians(deg)
     ux, uy, vx, vy = math.cos(ang), math.sin(ang), -math.sin(ang), math.cos(ang)
     hl, hw = lc / 2 - 1e-9, wc / 2 - 1e-9
     r = math.ceil(math.hypot(lc, wc) / 2) + 1
@@ -122,23 +145,28 @@ def _mask_runs(wc: int, lc: int, h8: int):
     return tuple(runs)
 
 
+def _fits_n(grid: _Grid, state, wc, lc, n: int) -> bool:
+    cx, cy, h = state
+    q = n // 4
+    if h % q == 0:   # axis-aligned: the same footprint as the 4-heading planner, O(1)
+        return grid.free(*_footprint(cx, cy, h // q, wc, lc))
+    return all(grid.free(cx + dx0, cy + dy, w, 1) for dy, dx0, w in _mask_runs_deg(wc, lc, 360.0 * h / n))
+
+
 def _fits8(grid: _Grid, state, wc, lc) -> bool:
-    cx, cy, h = state
-    if h % 2 == 0:   # orthogonal: the same footprint as the 4-heading planner, O(1)
-        return grid.free(*_footprint(cx, cy, h // 2, wc, lc))
-    return all(grid.free(cx + dx0, cy + dy, w, 1) for dy, dx0, w in _mask_runs(wc, lc, h))
+    return _fits_n(grid, state, wc, lc, 8)
 
 
-def _neighbors8(state, grid: _Grid, wc, lc):
-    """(next pose, cost): forward, reverse, or a 45-degree turn in place."""
+def _neighbors_n(state, grid: _Grid, wc, lc, n: int):
+    """(next pose, cost): forward, reverse, or one heading step (360/n degrees) in place."""
     cx, cy, h = state
-    dx, dy = _DX8[h], _DY8[h]
-    step = math.sqrt(2) if h % 2 else 1.0
+    dx, dy = _step_vectors(n)[h]
+    step = math.hypot(dx, dy)
     for nxt, cost in (((cx + dx, cy + dy, h), step),
                       ((cx - dx, cy - dy, h), step * _REVERSE_COST),
-                      ((cx, cy, (h + 1) % 8), 1.0),
-                      ((cx, cy, (h - 1) % 8), 1.0)):
-        if _fits8(grid, nxt, wc, lc):
+                      ((cx, cy, (h + 1) % n), 1.0),
+                      ((cx, cy, (h - 1) % n), 1.0)):
+        if _fits_n(grid, nxt, wc, lc, n):
             yield nxt, cost
 
 
@@ -172,8 +200,10 @@ def plan(twin: Twin, chair: Chair) -> Plan:
     wc, lc = chair.width_cells, chair.length_cells
     grid = _Grid(_effective_blocked(twin, chair), twin.W, twin.H)
     start, goal, want_h = twin.start, twin.goal, twin.goal_heading
-    if twin.headings == 8:
-        fits, neighbors = _fits8, _neighbors8
+    n = twin.headings
+    if n in (8, 16):
+        fits = lambda g, s, w, l: _fits_n(g, s, w, l, n)                  # noqa: E731
+        neighbors = lambda s, g, w, l: _neighbors_n(s, g, w, l, n)         # noqa: E731
     else:
         fits, neighbors = _fits, lambda s, g, w, l: ((n, 1) for n in _neighbors(s, g, w, l))
     if not fits(grid, start, wc, lc):
