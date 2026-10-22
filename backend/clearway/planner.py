@@ -9,6 +9,7 @@ and we classify why from the grid — never from a model.
 shortcut: 4 headings (orthogonal) for D1; D2 widens to 8 headings for diagonal moves.
 """
 from dataclasses import dataclass
+from typing import List, Tuple
 import heapq
 import math
 
@@ -89,27 +90,51 @@ def _effective_blocked(twin: Twin, chair: Chair):
     return twin.blocked
 
 
-def drive(twin: Twin, chair: Chair) -> bool:
-    """True if the chair can reach the goal from the start, else False (it jams)."""
+@dataclass(frozen=True)
+class Plan:
+    reached: bool
+    poses: List[Tuple[int, int, int]]   # start ... goal, or start ... furthest progress
+
+
+def _reconstruct(came, s):
+    path = [s]
+    while s in came:
+        s = came[s]
+        path.append(s)
+    return path[::-1]
+
+
+def plan(twin: Twin, chair: Chair) -> Plan:
+    """A* over (x, y, heading). On a jam, the path to the closest reachable pose."""
     wc, lc = chair.width_cells, chair.length_cells
     blocked, W, H = _effective_blocked(twin, chair), twin.W, twin.H
     start, goal = twin.start, twin.goal
     if not _fits(blocked, W, H, start, wc, lc):
-        return False
+        return Plan(False, [start])
     openh = [(_heur(start, goal), 0, start)]
     best = {start: 0}
+    came = {}
+    closest = (_heur(start, goal), 0, start)   # (distance, moves, pose): ties -> fewest moves
     while openh:
         _, g, s = heapq.heappop(openh)
-        if (s[0], s[1]) == goal:
-            return True
         if g > best.get(s, 1 << 30):
             continue
+        if (s[0], s[1]) == goal:
+            return Plan(True, _reconstruct(came, s))
+        if (_heur(s, goal), g) < closest[:2]:
+            closest = (_heur(s, goal), g, s)
         for ns in _neighbors(s, blocked, W, H, wc, lc):
             ng = g + 1
             if ng < best.get(ns, 1 << 30):
                 best[ns] = ng
+                came[ns] = s
                 heapq.heappush(openh, (ng + _heur(ns, goal), ng, ns))
-    return False
+    return Plan(False, _reconstruct(came, closest[2]))
+
+
+def drive(twin: Twin, chair: Chair) -> bool:
+    """True if the chair can reach the goal from the start, else False (it jams)."""
+    return plan(twin, chair).reached
 
 
 def analyze(twin: Twin, chair: Chair) -> Jam | None:
