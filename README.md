@@ -6,7 +6,8 @@
 
 CLEARWAY is an **accessibility** tool. A family adapting a home for a wheelchair user usually
 guesses: they pay for a fix, then find out whether the chair actually fits. CLEARWAY drives a
-simulated wheelchair through a digital twin of the home, shows exactly where it jams, and
+simulated wheelchair through a digital twin of the home (doorways, S-shaped hallways, dead
+ends where it must turn around), shows exactly where it jams, and
 proposes the cheapest fix that two **independent** checkers cannot refuse: a physics re-drive
 of the chair, and a hard-coded accessibility standard (ADA 2010 / EN 17210). You approve what
 ships, and you get a contractor brief with cited prices.
@@ -20,7 +21,7 @@ said no.
 | Step | Agent | What runs | Can refuse? |
 |---|---|---|---|
 | 1 | Surveyor | deterministic code: loads the home and the chair | no |
-| 2 | Pilot | A* planner (code): drives the chair's real footprint and heading; finds the jam | no |
+| 2 | Pilot | code: an A* planner through doorways; for hallways, wheelchair kinematics (turns about its drive axle, drives arcs, reverses, every move's sweep checked) | no |
 | 3 | Inspector | rules engine (code) + **Tavily** for the clause text | **yes** |
 | 4 | Builder | **Nemotron 3 Super on Nebius Token Factory**: proposes the cheapest catalogue fix, as JSON only; **Tavily** for a cited price | no (maker) |
 | 5 | Auditor | physics re-drive + rules engine (code), from raw numbers only | **yes** (checker) |
@@ -53,6 +54,26 @@ of Super and say so.
   `backend/clearway/llm.py`). Super and Ultra are served from `us-central1`.
 - **Tavily** fetches the cited clause text and contractor price ranges, shown as linked cards.
 
+## How the hallway physics is checked
+
+Turning is where a naive model lies, so the route planner is calibrated against closed-form
+geometry before it judges anything (`backend/tests/test_kinematics.py`): it never passes a
+hallway narrower than the chair; it never clears a 90-degree corner below the rigid-body bound
+(L/2 + W)/sqrt(2), and a mid-wheel chair clears within 10 cm of it; it respects the bounds for
+turning around in a square room; and wider spaces and mirrored layouts never change a verdict
+the wrong way.
+
+The route presets use a real chair from its published spec: the **Quantum Q6 Edge 3 Stretto**
+(mid-wheel; 54.6 x 82.6 cm, turning radius 53.3 cm, EASTIN database). The **Pride R-TRAK**
+(rear-wheel; 61.4 x 88.3 cm, turning radius 65.2 cm, Quantum 2025 sell sheet) is also offered.
+The footprint's corners are trimmed until its pivot circle matches the spec-sheet turning
+diameter, because real chairs have rounded casters and footplates.
+
+For doorways the chair is usually physically fine below code, so the Auditor refuses on code.
+Hallways work the same way with these chairs: the cheapest width the Q6 can use (80 cm) is under
+ADA 403.5.1's 915 mm and is refused; for a dead end, the smallest T it can turn in (100 cm) is
+under 304.3.2's 1525 mm square and is refused.
+
 ## Run it
 
 ```bash
@@ -78,11 +99,16 @@ Container that keeps the daily cap in a Durable Object).
 
 These are known and deliberate for a hackathon build:
 
-- **The twin is 2D and comes from templates.** The three homes are presets with one doorway each;
-  there is no floor-plan import or room editor yet.
-- **The chair is a rectangle on a 5 cm grid with 4 headings.** It turns 90° in place and moves
-  straight; there are no diagonal moves or swept-turn geometry, so tight L-shaped corridors are
-  not modelled.
+- **The twin is 2D and comes from templates.** Five presets (three doorways, two hallways);
+  there is no floor-plan import or room editor yet. Hallways are made of straight legs with
+  alternating 90-degree turns; U-turns (governed by ADA 403.5.2) are not modelled, and hallways
+  are checked against ADA only.
+- **Doorways use a simpler chair model** (a rectangle that pivots in 90-degree steps), which is
+  enough for straight passage. Hallways use the kinematic model above.
+- **The kinematic chair is a rigid footprint on a 5 cm grid with 16 headings.** It can be up to one
+  grid cell more pessimistic than reality, never more optimistic. Without a spec-sheet turning
+  diameter its corners stay square, which overstates the space it needs to turn. Spec sheets do
+  not publish where the drive axle sits; the R-TRAK's is an estimate.
 - **The rule pack is small**: door clear width, threshold height and turning diameter (ADA
   404.2.3 / 404.2.5 / 304.3 and EN 17210 equivalents). It is guidance, not a compliance
   certificate.
@@ -94,7 +120,8 @@ These are known and deliberate for a hackathon build:
 - **The brief's number guard checks digit runs.** A digit that also appears in a clause number
   could pass it.
 - **The hosted demo's daily live cap is kept in memory**, so it resets when the container
-  restarts, and its rate limits are shared by all visitors.
+  restarts, and its rate limits are shared by all visitors. Preset hallway runs are computed
+  once at startup so they answer quickly on the small container.
 - **The Builder can propose something useless.** The Auditor refuses it, but that uses one of the
   two rounds, after which the run escalates honestly to a contractor brief.
 
