@@ -1,0 +1,125 @@
+"""Pilot: a footprint- and orientation-aware path planner over the twin grid.
+
+This is the deterministic ground truth. The chair is a rectangle (width x length) that
+occupies real cells at every pose; it moves forward along its heading or turns 90 deg
+in place, and a turn is only allowed when the rotated footprint is itself collision
+free (that is turning clearance). If no pose sequence reaches the goal, the chair jams,
+and we classify why from the grid — never from a model.
+
+shortcut: 4 headings (orthogonal) for D1; D2 widens to 8 headings for diagonal moves.
+"""
+from dataclasses import dataclass
+import heapq
+import math
+
+from .twin import Twin, CELL_CM, max_free_run
+
+# heading 0=+x, 1=+y, 2=-x, 3=-y
+_DX = (1, 0, -1, 0)
+_DY = (0, 1, 0, -1)
+
+
+@dataclass(frozen=True)
+class Chair:
+    width_cm: int
+    length_cm: int
+    name: str = "chair"
+
+    @property
+    def width_cells(self) -> int:
+        return max(1, round(self.width_cm / CELL_CM))
+
+    @property
+    def length_cells(self) -> int:
+        return max(1, round(self.length_cm / CELL_CM))
+
+
+@dataclass(frozen=True)
+class Jam:
+    reason: str          # "clear_width" | "turn_radius" | "threshold"
+    measured_cm: int     # what the home actually offers
+    required_cm: int     # what the chair needs
+    detail: str = ""
+
+
+def _footprint(cx, cy, heading, wc, lc):
+    """Axis-aligned cell rectangle the chair covers at this pose."""
+    if heading % 2 == 0:        # facing +x / -x: length runs along x
+        lx, ly = lc, wc
+    else:                       # facing +y / -y: length runs along y
+        lx, ly = wc, lc
+    return cx - lx // 2, cy - ly // 2, lx, ly
+
+
+def _fits(blocked, W, H, state, wc, lc) -> bool:
+    cx, cy, h = state
+    x0, y0, lx, ly = _footprint(cx, cy, h, wc, lc)
+    if x0 < 0 or y0 < 0 or x0 + lx > W or y0 + ly > H:
+        return False
+    for xx in range(x0, x0 + lx):
+        for yy in range(y0, y0 + ly):
+            if (xx, yy) in blocked:
+                return False
+    return True
+
+
+def _neighbors(state, blocked, W, H, wc, lc):
+    cx, cy, h = state
+    out = []
+    fwd = (cx + _DX[h], cy + _DY[h], h)
+    if _fits(blocked, W, H, fwd, wc, lc):
+        out.append(fwd)
+    for nh in ((h + 1) % 4, (h - 1) % 4):   # turn in place needs clearance
+        turned = (cx, cy, nh)
+        if _fits(blocked, W, H, turned, wc, lc):
+            out.append(turned)
+    return out
+
+
+def _heur(state, goal):
+    return math.hypot(state[0] - goal[0], state[1] - goal[1])
+
+
+def drive(twin: Twin, chair: Chair) -> bool:
+    """True if the chair can reach the goal from the start, else False (it jams)."""
+    wc, lc = chair.width_cells, chair.length_cells
+    blocked, W, H = twin.blocked, twin.W, twin.H
+    start, goal = twin.start, twin.goal
+    if not _fits(blocked, W, H, start, wc, lc):
+        return False
+    openh = [(_heur(start, goal), 0, start)]
+    best = {start: 0}
+    while openh:
+        _, g, s = heapq.heappop(openh)
+        if (s[0], s[1]) == goal:
+            return True
+        if g > best.get(s, 1 << 30):
+            continue
+        for ns in _neighbors(s, blocked, W, H, wc, lc):
+            ng = g + 1
+            if ng < best.get(ns, 1 << 30):
+                best[ns] = ng
+                heapq.heappush(openh, (ng + _heur(ns, goal), ng, ns))
+    return False
+
+
+def analyze(twin: Twin, chair: Chair) -> Jam | None:
+    """Return None if the chair reaches the goal, else a classified Jam."""
+    if drive(twin, chair):
+        return None
+    # Jammed: measure the real opening from the grid and classify.
+    gap_cells = max((max_free_run(twin, c) for c in twin.wall_cols), default=0)
+    measured_cm = gap_cells * twin.cell_cm
+    if gap_cells < chair.width_cells:
+        return Jam(
+            reason="clear_width",
+            measured_cm=measured_cm,
+            required_cm=chair.width_cm,
+            detail=f"doorway clear width {measured_cm} cm < chair width {chair.width_cm} cm",
+        )
+    return Jam(
+        reason="turn_radius",
+        measured_cm=measured_cm,
+        required_cm=chair.width_cm,
+        detail="chair cannot maneuver through the route despite adequate door width",
+    )
