@@ -5,7 +5,7 @@ must make (start -> goal). Everything downstream (the planner, the rule engine, 
 auditor) reads measurements off this grid, never off an LLM.
 """
 from dataclasses import dataclass, field
-from typing import FrozenSet, Tuple
+from typing import FrozenSet, Optional, Tuple
 
 CELL_CM = 5  # grid resolution; 5 cm is fine for doorway/turning decisions
 
@@ -22,6 +22,8 @@ class Twin:
     cell_cm: int = CELL_CM
     thresholds: FrozenSet[Tuple[int, int]] = frozenset()  # doorway cells carrying a step
     threshold_mm: int = 0            # height of that step
+    headings: int = 4                # 4: door twins (90-degree pivots); 8: routes (45-degree steps + reverse)
+    goal_heading: Optional[int] = None  # route turnarounds: arrive facing this way (in `headings` units)
 
 
 def two_room_template(door_cm: int, threshold_mm: int = 0) -> Twin:

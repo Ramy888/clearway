@@ -6,9 +6,12 @@ in place, and a turn is only allowed when the rotated footprint is itself collis
 free (that is turning clearance). If no pose sequence reaches the goal, the chair jams,
 and we classify why from the grid — never from a model.
 
-shortcut: 4 headings (orthogonal) for D1; D2 widens to 8 headings for diagonal moves.
+Door twins use 4 headings (90-degree pivots), as above. Route twins use 8 headings: a turn is
+a 45-degree step whose footprint must fit, so a 180-degree turnaround is four checked steps;
+the chair may also reverse, and a twin may require a final heading (turn around, then leave).
 """
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import List, Tuple
 import heapq
 import math
@@ -18,6 +21,10 @@ from .twin import Twin, CELL_CM, max_free_run
 # heading 0=+x, 1=+y, 2=-x, 3=-y
 _DX = (1, 0, -1, 0)
 _DY = (0, 1, 0, -1)
+# 8 headings, 45 degrees apart: 0=+x, 2=+y, 4=-x, 6=-y; odd = diagonals
+_DX8 = (1, 1, 0, -1, -1, -1, 0, 1)
+_DY8 = (0, 1, 1, 1, 0, -1, -1, -1)
+_REVERSE_COST = 1.5   # a chair can back up, but prefers driving forward
 
 
 @dataclass(frozen=True)
@@ -95,6 +102,46 @@ def _neighbors(state, grid: _Grid, wc, lc):
     return out
 
 
+@lru_cache(maxsize=64)
+def _mask_runs(wc: int, lc: int, h8: int):
+    """Cells under the chair at a diagonal heading, as row runs (dy, dx0, width) from the pivot.
+
+    A cell is covered when its centre lies inside the rotated rectangle (length along the
+    heading, width across it). Rows let the summed-area table check each run in O(1).
+    """
+    ang = math.radians(45 * h8)
+    ux, uy, vx, vy = math.cos(ang), math.sin(ang), -math.sin(ang), math.cos(ang)
+    hl, hw = lc / 2 - 1e-9, wc / 2 - 1e-9
+    r = math.ceil(math.hypot(lc, wc) / 2) + 1
+    runs = []
+    for dy in range(-r, r + 1):
+        xs = [dx for dx in range(-r, r + 1)
+              if abs((dx + .5) * ux + (dy + .5) * uy) < hl and abs((dx + .5) * vx + (dy + .5) * vy) < hw]
+        if xs:   # a convex shape: each row is one contiguous run
+            runs.append((dy, xs[0], xs[-1] - xs[0] + 1))
+    return tuple(runs)
+
+
+def _fits8(grid: _Grid, state, wc, lc) -> bool:
+    cx, cy, h = state
+    if h % 2 == 0:   # orthogonal: the same footprint as the 4-heading planner, O(1)
+        return grid.free(*_footprint(cx, cy, h // 2, wc, lc))
+    return all(grid.free(cx + dx0, cy + dy, w, 1) for dy, dx0, w in _mask_runs(wc, lc, h))
+
+
+def _neighbors8(state, grid: _Grid, wc, lc):
+    """(next pose, cost): forward, reverse, or a 45-degree turn in place."""
+    cx, cy, h = state
+    dx, dy = _DX8[h], _DY8[h]
+    step = math.sqrt(2) if h % 2 else 1.0
+    for nxt, cost in (((cx + dx, cy + dy, h), step),
+                      ((cx - dx, cy - dy, h), step * _REVERSE_COST),
+                      ((cx, cy, (h + 1) % 8), 1.0),
+                      ((cx, cy, (h - 1) % 8), 1.0)):
+        if _fits8(grid, nxt, wc, lc):
+            yield nxt, cost
+
+
 def _heur(state, goal):
     return math.hypot(state[0] - goal[0], state[1] - goal[1])
 
@@ -124,23 +171,27 @@ def plan(twin: Twin, chair: Chair) -> Plan:
     """A* over (x, y, heading). On a jam, the path to the closest reachable pose."""
     wc, lc = chair.width_cells, chair.length_cells
     grid = _Grid(_effective_blocked(twin, chair), twin.W, twin.H)
-    start, goal = twin.start, twin.goal
-    if not _fits(grid, start, wc, lc):
+    start, goal, want_h = twin.start, twin.goal, twin.goal_heading
+    if twin.headings == 8:
+        fits, neighbors = _fits8, _neighbors8
+    else:
+        fits, neighbors = _fits, lambda s, g, w, l: ((n, 1) for n in _neighbors(s, g, w, l))
+    if not fits(grid, start, wc, lc):
         return Plan(False, [start])
     openh = [(_heur(start, goal), 0, start)]
     best = {start: 0}
     came = {}
-    closest = (_heur(start, goal), 0, start)   # (distance, moves, pose): ties -> fewest moves
+    closest = (_heur(start, goal), 0, start)   # (distance, cost, pose): ties -> cheapest
     while openh:
         _, g, s = heapq.heappop(openh)
         if g > best.get(s, 1 << 30):
             continue
-        if (s[0], s[1]) == goal:
+        if (s[0], s[1]) == goal and (want_h is None or s[2] == want_h):
             return Plan(True, _reconstruct(came, s))
         if (_heur(s, goal), g) < closest[:2]:
             closest = (_heur(s, goal), g, s)
-        for ns in _neighbors(s, grid, wc, lc):
-            ng = g + 1
+        for ns, cost in neighbors(s, grid, wc, lc):
+            ng = g + cost
             if ng < best.get(ns, 1 << 30):
                 best[ns] = ng
                 came[ns] = s
