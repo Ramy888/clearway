@@ -6,7 +6,7 @@ model), so the whole run is free; T8 swaps in the Nemotron Super maker behind th
 interface. Every deciding step is still the deterministic Auditor.
 """
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from .rules import DoorSpec, evaluate, CLEAR_WIDTH_MIN_MM
 from .catalogue import FixOp
@@ -54,8 +54,16 @@ def _candidates(jam, chair: Chair, standard: str) -> List[List[FixOp]]:
     return []
 
 
+def stub_maker(jam, chair: Chair, standard: str, history) -> Optional[List[FixOp]]:
+    """Deterministic cost-greedy maker: the next untried candidate, or None when out."""
+    cands = _candidates(jam, chair, standard)
+    return cands[len(history)] if len(history) < len(cands) else None
+
+
 def run(before: DoorSpec, chair: Chair, standard: str = "ADA",
-        context: Optional[dict] = None, max_rounds: int = 2) -> RunResult:
+        context: Optional[dict] = None, max_rounds: int = 2,
+        maker: Optional[Callable] = None) -> RunResult:
+    maker = maker or stub_maker
     ledger: List[Event] = []
     twin = two_room_template(door_cm=before.clear_width_cm, threshold_mm=before.threshold_mm)
     ledger.append(Event("Surveyor", "load", True,
@@ -72,9 +80,12 @@ def run(before: DoorSpec, chair: Chair, standard: str = "ADA",
     if failed:
         ledger.append(Event("Inspector", "cite", False, f"{failed[0].clause}: {failed[0].note}"))
 
-    candidates = _candidates(jam, chair, standard)
+    history = []   # (diff, refusal reason) fed back to the maker
     refused = 0
-    for diff in candidates[:max_rounds]:
+    for _ in range(max_rounds):
+        diff = maker(jam, chair, standard, history)
+        if diff is None:
+            break
         ledger.append(Event("Builder", "propose", True, _describe(diff)))
         res = audit(before, diff, chair, standard, context)
         if res.accepted:
@@ -86,6 +97,7 @@ def run(before: DoorSpec, chair: Chair, standard: str = "ADA",
         refused += 1
         tail = f" [{res.failing_clause}]" if res.failing_clause else ""
         ledger.append(Event("Auditor", "refuse", False, res.reason + tail))
+        history.append((diff, res.reason + tail))
 
     ledger.append(Event("Scribe", "escalate", True,
                         f"no catalogue fix cleared both checks after {refused} "
