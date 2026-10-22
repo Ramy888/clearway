@@ -15,10 +15,12 @@ RULE_PACK_VERSION = "ada-404-2010+en17210.v1"
 # Code minimums/maximums, in millimetres.
 CLEAR_WIDTH_MIN_MM = {"ADA": 815, "EN17210": 850}   # ADA 404.2.3 / EN 17210
 THRESHOLD_MAX_MM = 13                                # ADA 404.2.5
-TURNING_DIAMETER_MIN_MM = 1500                       # ADA 304.3
+# ADA 304.3.1: 60 in (1525 mm) circle, checked against access-board.gov (2026-10-22).
+# EN 17210's 1500 mm is not re-verified against the standard's text.
+TURNING_DIAMETER_MIN_MM = {"ADA": 1525, "EN17210": 1500}
 
 _CLAUSE = {
-    "ADA": {"clear_width": "ADA 404.2.3", "threshold": "ADA 404.2.5", "turning": "ADA 304.3"},
+    "ADA": {"clear_width": "ADA 404.2.3", "threshold": "ADA 404.2.5", "turning": "ADA 304.3.1"},
     "EN17210": {"clear_width": "EN 17210 §12", "threshold": "EN 17210 §12", "turning": "EN 17210 §11"},
 }
 
@@ -61,10 +63,10 @@ def evaluate(door: DoorSpec, standard: str = "ADA") -> List[Finding]:
 
     if door.turning_diameter_cm is not None:
         td_mm = door.turning_diameter_cm * 10
+        td_req = TURNING_DIAMETER_MIN_MM[standard]
         findings.append(Finding(
-            "turning", clause["turning"], td_mm >= TURNING_DIAMETER_MIN_MM,
-            td_mm, TURNING_DIAMETER_MIN_MM,
-            f"turning space {td_mm} mm vs minimum {TURNING_DIAMETER_MIN_MM} mm",
+            "turning", clause["turning"], td_mm >= td_req, td_mm, td_req,
+            f"turning space {td_mm} mm vs minimum {td_req} mm",
         ))
 
     return findings
