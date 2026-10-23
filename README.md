@@ -2,7 +2,7 @@
 
 **Test-drive your home in a wheelchair before you change it.**
 
-**Live demo:** https://production-clearway.tyzo.nodeops.app · Nebius x NVIDIA Global AI Hackathon, Physical AI track
+**Live demo:** https://clearway-demo.ramy-comm.workers.dev · Nebius x NVIDIA Global AI Hackathon, Physical AI track
 
 CLEARWAY is an **accessibility** tool. A family adapting a home for a wheelchair user usually
 guesses: they pay for a fix, then find out whether the chair actually fits. CLEARWAY drives a
@@ -111,8 +111,9 @@ Offline runs need no keys and cost nothing. Live runs need `NEBIUS_API_KEY` and
 rate-limited per client and capped per day before any model call.
 
 **Deploy:** the `Dockerfile` builds the UI and serves it from FastAPI. The live demo runs on
-CreateOS; `deploy/cloudflare` is a tested alternative (a Worker in front of a Cloudflare
-Container that keeps the daily cap in a Durable Object).
+Cloudflare (`deploy/cloudflare`): a Worker in front of a Cloudflare Container, with the live-run
+caps kept in a Durable Object so they survive the container sleeping. The same image also ran
+on CreateOS.
 
 ## Limitations
 
@@ -143,9 +144,9 @@ These are known and deliberate for a hackathon build:
   date, and are always shown with their source link.
 - **The brief's number guard checks digit runs.** A digit that also appears in a clause number
   could pass it.
-- **The hosted demo's daily live cap is kept in memory**, so it resets when the container
-  restarts, and its rate limits are shared by all visitors. Preset hallway runs are computed
-  once at startup so they answer quickly on the small container.
+- **The hosted demo runs one small container** (1/4 vCPU) that sleeps after 15 idle minutes, so
+  the first visit after a quiet spell waits for it to start. Live runs are capped per day and in
+  total by the Worker (in Durable Object storage), and rate-limited per visitor.
 - **The Builder can propose something useless.** The Auditor refuses it, but that uses one of the
   two rounds, after which the run escalates honestly to a contractor brief.
 

@@ -13,3 +13,10 @@ docs/
 CLAUDE.md
 AGENTS.md
 .claude/
+
+# any depth (deploy/cloudflare/.env holds the account pin), and build-irrelevant outputs
+**/.env
+**/.env.*
+!**/.env.example
+scripts/demo-video/out/
+deploy/
