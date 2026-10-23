@@ -171,7 +171,7 @@ def _driveway(spec: RouteSpec) -> Twin:
     d = SIENNA.axle_offset_cm / CELL_CM                                                      # axle behind centre
     gx = round((PARK_OFFSET_CM + SIENNA.width_cm / 2) / CELL_CM)
     gy = round(-_BAY_DEPTH_CELLS + (30 + SIENNA.length_cm / 2) / CELL_CM - d)
-    return _materialise(cells, start=(-160, _STREET_CELLS - _LANE_FROM_CURB, _HEADING["E"]), goal=(gx, gy),
+    return _materialise(cells, start=(-120, _STREET_CELLS - _LANE_FROM_CURB, _HEADING["E"]), goal=(gx, gy),
                         goal_heading=_HEADING["N"], kind="driveway", width_cm=spec.width_cm)
 
 

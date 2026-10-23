@@ -3,7 +3,7 @@ import { buildTimeline, sampleTimeline, type Timeline } from "./model";
 import type { ChairSpec, Run, Scene, Twin } from "./types";
 
 const PLAYBACK = 1.15; // real seconds per timeline second (a touch slower than life, easier to follow)
-const VAN_SPEED = 40; // cells/s (2 m/s): an easy parking pace
+const VAN_SPEED = 60; // cells/s (3 m/s): a slow street pace
 const RAMP_DEPLOY_S = 1.4;
 const ROLL_SPEED = 14; // cells/s: the chair's own pace off the ramp
 
