@@ -3,6 +3,7 @@
 Physics (the van's own kinematics, then a clear strip beside it for the ramp and the chair rolling
 off it) and ADA 502 (van space + access aisle) are independent checkers that can disagree.
 """
+import math
 import time
 import unittest
 
@@ -25,7 +26,13 @@ class TestDrivewayPhysics(unittest.TestCase):
         t = time.perf_counter()
         p = plan_route(twin_for(BAY), SIENNA)
         self.assertTrue(p.reached)
-        self.assertLess(time.perf_counter() - t, 5.0)
+        self.assertLess(time.perf_counter() - t, 1.0)
+
+    def test_it_drives_in_like_a_driver_one_swing_no_reversing(self):
+        poses = plan_route(twin_for(BAY), SIENNA).poses
+        for (x0, y0, h0), (x1, y1, _) in zip(poses, poses[1:]):
+            a = math.radians(h0 * 360 / 16)
+            self.assertGreaterEqual((x1 - x0) * math.cos(a) + (y1 - y0) * math.sin(a), 0, "reversed")
 
     def test_in_a_350_cm_bay_the_ramp_jams_with_the_measured_gap(self):
         jam = analyze(twin_for(BAY), Q6)

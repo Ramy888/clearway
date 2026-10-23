@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import App from "./App";
 import fixture from "./fixtures/run65.json"; // a real /api/run payload from the backend
 import routeFixture from "./fixtures/route_s.json"; // a real route payload (S-hallway, Quantum Q6)
+import drivewayFixture from "./fixtures/driveway.json"; // a real car-mode payload (350 cm bay, Quantum Q6)
 
 const BRIEF = { markdown: "# CLEARWAY contractor brief\n- widen frame to 82 cm", narrative_source: "none", withheld: false };
 
@@ -77,6 +78,29 @@ it("runs a route preset: sends a route with its real chair and draws the chair r
   expect(sent.chair.name).toBe("Quantum Q6 Edge 3 Stretto");
   expect(screen.getByRole("status").textContent).toMatch(/jam/i);
   expect(document.querySelector("g.chair")!.getAttribute("transform")).toMatch(/rotate\(/);
+});
+
+it("car mode: the van drives, its ramp jams before the fix, and the chair rolls off after", async () => {
+  reply(true, 200, drivewayFixture);
+  render(<App />);
+  fireEvent.click(screen.getByLabelText(/Home driveway/i));
+  fireEvent.click(screen.getByRole("button", { name: /test-drive/i }));
+  await screen.findByText("Refused 1 of 2 proposed fixes before you saw one.");
+  const call = vi.mocked(fetch).mock.calls.find(([u]) => u === "/api/run")!;
+  const sent = JSON.parse((call[1] as RequestInit).body as string);
+  expect(sent.route).toEqual({ kind: "driveway", width_cm: 350 });
+  expect(sent.chair.name).toBe("Quantum Q6 Edge 3 Stretto");
+  expect(screen.getByRole("status").textContent).toBe(
+    "JAM at the ramp: ramp and chair need 215 cm beside the van; the bay leaves 121 cm.",
+  );
+  expect(document.querySelector(".van-glyph")).not.toBeNull();
+  expect(document.querySelector(".ramp.bad")).not.toBeNull();
+  expect(document.querySelector(".chair-glyph")).toBeNull(); // the chair never got out
+  fireEvent.click(screen.getByRole("tab", { name: /after fix/i }));
+  expect(screen.getByRole("status").textContent).toMatch(/^Clears: the van parks, the ramp deploys/);
+  expect(document.querySelector(".ramp:not(.bad)")).not.toBeNull();
+  expect(document.querySelector(".aisle")).not.toBeNull(); // the marked access aisle
+  expect(document.querySelector(".chair-glyph")).not.toBeNull();
 });
 
 it("shows the server's reason instead of a blank screen", async () => {

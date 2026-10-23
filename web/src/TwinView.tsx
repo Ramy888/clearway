@@ -3,6 +3,9 @@ import { buildTimeline, sampleTimeline, type Timeline } from "./model";
 import type { ChairSpec, Run, Scene, Twin } from "./types";
 
 const PLAYBACK = 1.15; // real seconds per timeline second (a touch slower than life, easier to follow)
+const VAN_SPEED = 40; // cells/s (2 m/s): an easy parking pace
+const RAMP_DEPLOY_S = 1.4;
+const ROLL_SPEED = 14; // cells/s: the chair's own pace off the ramp
 
 function prefersReducedMotion(): boolean {
   return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -11,8 +14,17 @@ function prefersReducedMotion(): boolean {
 const ease = (s: number) => 0.5 - 0.5 * Math.cos(Math.PI * s); // sine in-out: no jolt at start or stop
 
 function statusText(scene: Scene, chair: ChairSpec, done: boolean): string {
-  const { twin, plan } = scene;
+  const { twin, plan, vehicle: van } = scene;
   const kind = twin.kind ?? "door";
+  if (van) {
+    if (!done) return "Parking the van…";
+    if (plan.reached) return `Clears: the van parks, the ramp deploys and the ${chair.name} rolls off.`;
+    if (chair.width_cm > van.ramp_width_cm)
+      return `JAM: the ramp is ${van.ramp_width_cm} cm wide; the ${chair.name} is ${chair.width_cm} cm.`;
+    const need = van.ramp_length_cm + chair.length_cm;
+    const gap = (twin.width_cm ?? 0) - 30 - van.width_cm;
+    return `JAM at the ramp: ramp and chair need ${need} cm beside the van; the bay leaves ${gap} cm.`;
+  }
   if (!done) return "Driving the route…";
   if (plan.reached) {
     if (kind === "s_route") return `Clears: the ${chair.name} gets round both bends of a ${twin.width_cm} cm hallway.`;
@@ -87,6 +99,17 @@ interface Dim { x1: number; y1: number; x2: number; y2: number; label: string; b
 /** Floor-plan dimension lines: the door's clear width, or the hallway (and T) widths. */
 function dimensions(twin: Twin, blocked: Set<string>): Dim[] {
   const kind = twin.kind ?? "door";
+  if (kind === "driveway") {
+    // across the bay's mouth, behind the parked van (its label sits in the street)
+    const [gx] = twin.goal;
+    let top = 0;
+    while (top < twin.H && blocked.has(`${gx},${top}`)) top++;
+    const [a, b] = openSpan(blocked, twin, gx, top, false);
+    let mouth = top;
+    while (mouth + 1 < twin.H && openSpan(blocked, twin, gx, mouth + 1, false)[1] - openSpan(blocked, twin, gx, mouth + 1, false)[0] === b - a) mouth++;
+    const row = mouth - 3;
+    return [{ x1: a, y1: row, x2: b, y2: row, label: `${twin.width_cm} cm`, below: true }];
+  }
   if (kind === "door") {
     // on the far side of the wall, labelled under the opening: the chair arrives from the left
     const x = (twin.wall_cols[0] ?? 0) + (twin.wall_cols.length || 1) + 1.4;
@@ -142,6 +165,44 @@ function ChairGlyph({ L, W, d, jammed }: { L: number; W: number; d: number; jamm
   );
 }
 
+/** A minivan seen from above, in its own frame (length along +x, centred at 0, units = cells).
+ *  The rear axle sits at d, the front axle a wheelbase ahead; the sliding door is on the +y side. */
+function VanGlyph({ L, W, d, wb }: { L: number; W: number; d: number; wb: number }) {
+  const tl = 0.13 * L, tw = 0.12 * W; // tyre footprint
+  const front = L / 2;
+  return (
+    <g className="van-glyph">
+      <rect className="chair-shadow" x={-L / 2 + 0.6} y={-W / 2 + 0.9} width={L} height={W} rx={0.18 * W} />
+      {[d, d + wb].flatMap((ax) =>
+        [-1, 1].map((s) => (
+          <rect key={`${ax}${s}`} className="van-wheel" x={ax - tl / 2} y={s < 0 ? -W / 2 - 0.25 * tw : W / 2 - 0.75 * tw}
+            width={tl} height={tw} rx={tw / 3} />
+        )),
+      )}
+      <rect className="van-body" x={-L / 2} y={-W / 2} width={L} height={W} rx={0.18 * W} />
+      <rect className="van-roof" x={-L / 2 + 0.07 * L} y={-W / 2 + 0.13 * W} width={0.6 * L} height={0.74 * W} rx={0.12 * W} />
+      <path className="van-glass" d={`M ${0.21 * L} ${-0.4 * W} L ${0.3 * L} ${-0.44 * W} L ${0.3 * L} ${0.44 * W} L ${0.21 * L} ${0.4 * W} Z`} />
+      <rect className="van-glass" x={-L / 2 + 0.035 * L} y={-0.36 * W} width={0.03 * L} height={0.72 * W} rx={0.3} />
+      {[-1, 1].map((s) => (
+        <rect key={`m${s}`} className="van-body" x={0.2 * L} y={s < 0 ? -W / 2 - 0.09 * W : W / 2} width={0.04 * L} height={0.09 * W} rx={0.4} />
+      ))}
+      {[-1, 1].map((s) => (
+        <rect key={`h${s}`} className="van-light" x={front - 0.025 * L} y={s * 0.34 * W - 0.07 * W} width={0.02 * L} height={0.14 * W} rx={0.3} />
+      ))}
+      <line className="van-door" x1={-0.14 * L} y1={W / 2 - 0.6} x2={0.12 * L} y2={W / 2 - 0.6} />
+      <path className="chair-dir" d={`M ${0.36 * L} ${-0.1 * W} L ${0.44 * L} 0 L ${0.36 * L} ${0.1 * W}`} />
+    </g>
+  );
+}
+
+/** Free cells beside the parked van on its passenger (+y local) side, measured from its flank. */
+function sideGap(blocked: Set<string>, cx: number, cy: number, deg: number, W: number) {
+  const r = (deg * Math.PI) / 180, rx = -Math.sin(r), ry = Math.cos(r);
+  let s = 0;
+  while (s < 400 && !blocked.has(`${Math.floor(cx + rx * (W / 2 + s + 0.25))},${Math.floor(cy + ry * (W / 2 + s + 0.25))}`)) s += 0.5;
+  return s;
+}
+
 function useTimeline(tl: Timeline) {
   const reduced = prefersReducedMotion();
   const [t, setT] = useState(() => (reduced ? tl.total : 0));
@@ -180,18 +241,35 @@ function useUnitsPerPx(units: number) {
 
 /** Top-down twin with the chair gliding along its real planned path. Remount (key) to replay. */
 export function TwinView({ scene, chair, compareTo }: { scene: Scene; chair: ChairSpec; compareTo?: Twin }) {
-  const { twin, plan } = scene;
+  const { twin, plan, vehicle: van } = scene;
   const uid = useId().replace(/:/g, "");
-  const tl = useMemo(() => buildTimeline(plan.poses, chair, twin), [plan.poses, chair, twin]);
+  const blocked = useMemo(() => cellsOf(twin.walls), [twin.walls]);
+  // the body that drives: the chair, or (car mode) the van, whose ramp the chair then uses
+  const drive = useMemo(
+    () => (van ? buildTimeline(plan.poses, van, twin, VAN_SPEED) : buildTimeline(plan.poses, chair, twin)),
+    [plan.poses, chair, twin, van],
+  );
+  const parked = useMemo(() => (van ? sampleTimeline(drive, drive.total) : null), [van, drive]);
+  const cm = (v: number) => v / twin.cell_cm;
+  const rampClear = Boolean(scene.ramp?.clear);
+  const gap = useMemo(() => (parked ? sideGap(blocked, parked.cx, parked.cy, parked.deg, parked.W) : 0), [parked, blocked]);
+  const rampLen = van ? (rampClear ? cm(van.ramp_length_cm) : Math.min(cm(van.ramp_length_cm), gap)) : 0;
+  const roll = van && rampClear ? cm(van.ramp_length_cm + chair.length_cm) : 0; // chair centre travel off the ramp
+  const tl = useMemo(
+    () => (van ? { ...drive, total: drive.total + RAMP_DEPLOY_S + roll / ROLL_SPEED } : drive),
+    [drive, van, roll],
+  );
   const t = useTimeline(tl);
   const done = t >= tl.total;
   const jammed = done && !plan.reached;
   const isDoor = (twin.kind ?? "door") === "door";
-  const p = sampleTimeline(tl, t);
-  const blocked = useMemo(() => cellsOf(twin.walls), [twin.walls]);
+  const p = sampleTimeline(drive, Math.min(t, drive.total));
+  const after = Math.max(0, t - drive.total); // seconds since the van parked
+  const deployed = rampLen * Math.min(1, after / RAMP_DEPLOY_S);
+  const rolled = Math.min(roll, Math.max(0, after - RAMP_DEPLOY_S) * ROLL_SPEED);
   const plan2d = useMemo(() => layers(twin, blocked), [twin, blocked]);
   const dims = useMemo(() => dimensions(twin, blocked), [twin, blocked]);
-  const trail = tl.keys.filter((k) => k.t <= t).map((k) => sampleTimeline(tl, k.t));
+  const trail = drive.keys.filter((k) => k.t <= t).map((k) => sampleTimeline(drive, k.t));
   trail.push(p);
   // after a door fix: cells that were wall before and are open now (what gets built)
   const opened = useMemo(() => {
@@ -206,7 +284,10 @@ export function TwinView({ scene, chair, compareTo }: { scene: Scene; chair: Cha
   const doorTop = Math.floor(twin.H / 2) - Math.floor(doorCells / 2);
   const hinge = doorX + wallThick;
   const r = (p.deg * Math.PI) / 180;
-  const front = { x: p.cx + (p.L / 2) * Math.cos(r), y: p.cy + (p.L / 2) * Math.sin(r) };
+  // where a jam shows: the chair's front, or (car mode) the tip of the blocked ramp
+  const front = van
+    ? { x: p.cx - Math.sin(r) * (p.W / 2 + deployed), y: p.cy + Math.cos(r) * (p.W / 2 + deployed) }
+    : { x: p.cx + (p.L / 2) * Math.cos(r), y: p.cy + (p.L / 2) * Math.sin(r) };
   const dimClass = jammed ? "dim bad" : done && plan.reached ? "dim good" : "dim";
   const status = statusText(scene, chair, done);
   const [svgRef, upp] = useUnitsPerPx(twin.W);
@@ -216,10 +297,16 @@ export function TwinView({ scene, chair, compareTo }: { scene: Scene; chair: Cha
 
   return (
     <figure className="twin">
-      {!isDoor && (
+      {van ? (
         <p className="twin-meta">
-          Hallway {twin.width_cm} cm{twin.kind === "hammerhead" ? ` · turning space ${twin.bar_cm} cm` : " · two bends"}
+          Driveway bay {twin.width_cm} cm · {van.name}, {Math.round(van.ramp_length_cm / 2.54)} in side ramp
         </p>
+      ) : (
+        !isDoor && (
+          <p className="twin-meta">
+            Hallway {twin.width_cm} cm{twin.kind === "hammerhead" ? ` · turning space ${twin.bar_cm} cm` : " · two bends"}
+          </p>
+        )
       )}
       <svg ref={svgRef} style={fonts} viewBox={`0 0 ${twin.W} ${twin.H}`} role="img" aria-label={`Floor plan. ${status}`}>
         <defs>
@@ -238,6 +325,9 @@ export function TwinView({ scene, chair, compareTo }: { scene: Scene; chair: Cha
           <filter id={`depth${uid}`} x="-5%" y="-5%" width="110%" height="110%">
             <feDropShadow dx="0.35" dy="0.55" stdDeviation="0.45" floodOpacity="0.35" />
           </filter>
+          <pattern id={`aisle${uid}`} width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="3" className="aisle-hatch" />
+          </pattern>
           <marker id={`arrow${uid}`} viewBox="0 0 6 6" refX="3" refY="3" markerWidth="2.4" markerHeight="2.4" orient="auto-start-reverse">
             <path d="M0 0 L6 3 L0 6 z" className="dim-head" />
           </marker>
@@ -268,16 +358,47 @@ export function TwinView({ scene, chair, compareTo }: { scene: Scene; chair: Cha
           </g>
         )}
 
+        {van && parked && (
+          <g>
+            {compareTo && gap > 0 && (
+              // after the fix: the marked access aisle (ADA 502.3) beside the parked van
+              <g transform={`translate(${parked.cx} ${parked.cy}) rotate(${parked.deg})`}>
+                <rect x={-parked.L / 2} y={parked.W / 2 + 0.6} width={parked.L} height={gap - 0.6} fill={`url(#aisle${uid})`} className="aisle" />
+              </g>
+            )}
+            <text x={5} y={dims[0] ? dims[0].y1 + 6 : twin.H - 4} className="room-label" dominantBaseline="hanging">
+              Street
+            </text>
+          </g>
+        )}
+
         {trail.length > 1 && <polyline points={trail.map((q) => `${q.cx},${q.cy}`).join(" ")} className="trail" />}
 
-        <g className="goal" transform={`translate(${gx + 0.5} ${gy + 0.5})`}>
-          <circle r={3.2} className="goal-ring" />
-          <circle r={0.9} className="goal-dot" />
-        </g>
+        {!van && (
+          <g className="goal" transform={`translate(${gx + 0.5} ${gy + 0.5})`}>
+            <circle r={3.2} className="goal-ring" />
+            <circle r={0.9} className="goal-dot" />
+          </g>
+        )}
 
-        <g className={jammed ? "chair jammed" : "chair"} transform={`translate(${p.cx} ${p.cy}) rotate(${p.deg})`}>
-          <ChairGlyph L={p.L} W={p.W} d={tl.d} jammed={jammed} />
-        </g>
+        {van ? (
+          <g transform={`translate(${p.cx} ${p.cy}) rotate(${p.deg})`}>
+            {deployed > 0 && (
+              <rect className={jammed ? "ramp bad" : "ramp"} x={-cm(van.ramp_width_cm) / 2} y={p.W / 2}
+                width={cm(van.ramp_width_cm)} height={deployed} rx={0.4} />
+            )}
+            {rolled > 0 && (
+              <g transform={`translate(0 ${p.W / 2 - cm(chair.length_cm) / 2 + rolled}) rotate(90)`}>
+                <ChairGlyph L={cm(chair.length_cm)} W={cm(chair.width_cm)} d={cm(chair.axle_offset_cm ?? 0)} jammed={false} />
+              </g>
+            )}
+            <VanGlyph L={p.L} W={p.W} d={drive.d} wb={cm(van.wheelbase_cm)} />
+          </g>
+        ) : (
+          <g className={jammed ? "chair jammed" : "chair"} transform={`translate(${p.cx} ${p.cy}) rotate(${p.deg})`}>
+            <ChairGlyph L={p.L} W={p.W} d={drive.d} jammed={jammed} />
+          </g>
+        )}
         {jammed && (
           <g transform={`translate(${front.x} ${front.y})`}>
             <circle r={2.2} className="impact" />

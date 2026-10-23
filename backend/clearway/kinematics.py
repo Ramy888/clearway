@@ -40,6 +40,7 @@ class Vehicle:
     min_radius_cm: float           # path radius of the rear axle's midpoint at full lock
     ramp_length_cm: int = 0        # side ramp, deployed on the passenger side
     ramp_width_cm: int = 0
+    wheelbase_cm: int = 0          # rear axle to front axle (drawing; the radius already uses it)
     turning_diameter_cm: int = 0   # (chairs only) 0 keeps the footprint a plain rectangle
     caster_climb_mm: int = 0
 
@@ -54,7 +55,7 @@ class Vehicle:
 # rear-axle radius is sqrt(580^2 - 306.1^2) - 86 cm.
 SIENNA = Vehicle("BraunAbility Toyota Sienna (side-entry)", length_cm=517, width_cm=199,
                  axle_offset_cm=-(517 / 2 - 110), min_radius_cm=math.sqrt(580 ** 2 - 306.1 ** 2) - 86,
-                 ramp_length_cm=132, ramp_width_cm=77)
+                 ramp_length_cm=132, ramp_width_cm=77, wheelbase_cm=306)
 
 
 def _arc_radius(body) -> float:
@@ -129,26 +130,69 @@ def _primitives(ax: int, ay: int, h: int, n: int, body: _Body, radius: float, pi
     for t in ((1, -1) if pivots else ()):                                 # pivot about the axle
         if body.fits(ax, ay, deg + t * step / 2) and body.fits(ax, ay, deg + t * step):
             yield (ax, ay, (h + t) % n), TURN_COST
-    a = math.radians(deg)
-    vx, vy = -math.sin(a), math.cos(a)
     arc = radius * math.radians(step)
     for side in (1, -1):                                                  # arcs: left / right of the axle
-        ccx, ccy = ax + side * radius * vx, ay + side * radius * vy
         for direction, cost in ((1, arc), (-1, arc * REVERSE_COST)):
-            turn = direction * side                                       # heading change in steps
-            ok = True
-            for frac in fracs:
-                phi = math.radians(turn * step * frac)
-                rx, ry = ax - ccx, ay - ccy
-                px = ccx + rx * math.cos(phi) - ry * math.sin(phi)
-                py = ccy + rx * math.sin(phi) + ry * math.cos(phi)
-                if frac == 1.0:
-                    px, py = round(px), round(py)
-                if not body.fits(px, py, deg + turn * step * frac):
-                    ok = False
-                    break
-            if ok:
-                yield (px, py, (h + turn) % n), cost
+            ns = _arc(ax, ay, h, n, body, radius, fracs, side, direction)
+            if ns:
+                yield ns, cost
+
+
+def _arc(ax, ay, h: int, n: int, body, radius: float, fracs, side: int, direction: int):
+    """One heading step along an arc about a centre `side` of the axle; None if it does not fit.
+    With body None, just the geometry (the end pose)."""
+    step = 360.0 / n
+    deg = h * step
+    a = math.radians(deg)
+    ccx, ccy = ax + side * radius * -math.sin(a), ay + side * radius * math.cos(a)
+    turn = direction * side                                               # heading change in steps
+    for frac in fracs:
+        phi = math.radians(turn * step * frac)
+        rx, ry = ax - ccx, ay - ccy
+        px = ccx + rx * math.cos(phi) - ry * math.sin(phi)
+        py = ccy + rx * math.sin(phi) + ry * math.cos(phi)
+        if frac == 1.0:
+            px, py = round(px), round(py)
+        if body is not None and not body.fits(px, py, deg + turn * step * frac):
+            return None
+    return px, py, (h + turn) % n
+
+
+def _shot(start, goal, want_h, n: int, body, radius: float, fracs):
+    """Hybrid A*'s analytic expansion: straight on, one full-lock quarter turn onto the goal's
+    heading, straight in, using the search's own moves and checks. The path a driver would take;
+    None when it does not fit (then the search decides)."""
+    h0 = start[2]
+    if want_h is None or h0 % (n // 4) or (want_h - h0) % n not in (n // 4, 3 * n // 4):
+        return None
+    if not body.fits(start[0], start[1], h0 * 360.0 / n):
+        return None
+    side = 1 if (want_h - h0) % n == n // 4 else -1                       # forward arcs: turn = side
+    ox, oy, oh = 0, 0, h0
+    for _ in range(n // 4):                                               # the turn's own offset
+        ox, oy, oh = _arc(ox, oy, oh, n, None, radius, (1.0,), side, 1)
+    (ux, uy), (wx, wy) = _step_vectors(n)[h0], _step_vectors(n)[want_h]   # unit, axis-aligned
+    dx, dy = goal[0] - start[0] - ox, goal[1] - start[1] - oy
+    a, b = round(dx * ux + dy * uy), round(dx * wx + dy * wy)             # straight before / after
+    if a < 0 or b < 0:
+        return None
+    poses, s = [start], start
+    for _ in range(a):
+        s = (s[0] + ux, s[1] + uy, h0)
+        if not body.fits(s[0], s[1], h0 * 360.0 / n):
+            return None
+        poses.append(s)
+    for _ in range(n // 4):
+        s = _arc(s[0], s[1], s[2], n, body, radius, fracs, side, 1)
+        if s is None:
+            return None
+        poses.append(s)
+    for _ in range(b):
+        s = (s[0] + wx, s[1] + wy, want_h)
+        if not body.fits(s[0], s[1], want_h * 360.0 / n):
+            return None
+        poses.append(s)
+    return poses if max(abs(s[0] - goal[0]), abs(s[1] - goal[1])) <= 1 else None
 
 
 VEHICLE_WEIGHT = 2.0   # cars: weighted A* finds A feasible path fast; parking needs no shortest one
@@ -179,6 +223,9 @@ def plan_route(twin: Twin, chair) -> Plan:
     moves = (_arc_radius(chair), not isinstance(chair, Vehicle), tuple(i / k for i in range(1, k + 1)))
     start, (gx, gy), want_h = twin.start, twin.goal, twin.goal_heading
     if isinstance(chair, Vehicle):    # chairs keep exact A*; a car's search needs the guide
+        shot = _shot(start, (gx, gy), want_h, n, body, *moves[::2])
+        if shot:
+            return Plan(True, shot)
         guide, arc = _wall_distance(twin, (gx, gy)), chair.radius_cells * math.radians(360 / n)
 
         def h(s):

@@ -41,7 +41,12 @@ export interface Timeline { keys: Key[]; total: number; d: number; L: number; W:
 
 /** Timed keyframes at constant speed and turn rate. Routes key the drive axle (the body swings
  *  about it); door twins key the footprint centre, as their pivot model does. */
-export function buildTimeline(poses: Pose[], chair: ChairSpec, twin: Pick<Twin, "headings" | "cell_cm">): Timeline {
+export function buildTimeline(
+  poses: Pose[],
+  chair: ChairSpec,
+  twin: Pick<Twin, "headings" | "cell_cm">,
+  speed = SPEED_CELLS_S,
+): Timeline {
   const n = twin.headings ?? 4;
   const route = n !== 4;
   const keys: Key[] = [];
@@ -54,7 +59,7 @@ export function buildTimeline(poses: Pose[], chair: ChairSpec, twin: Pick<Twin, 
     if (keys.length) {
       const prev = keys[keys.length - 1];
       deg = prev.deg + ((((deg - prev.deg) % 360) + 540) % 360) - 180; // the short way round
-      const dur = Math.max(Math.hypot(x - prev.x, y - prev.y) / SPEED_CELLS_S, Math.abs(deg - prev.deg) / TURN_DEG_S, 1 / 120);
+      const dur = Math.max(Math.hypot(x - prev.x, y - prev.y) / speed, Math.abs(deg - prev.deg) / TURN_DEG_S, 1 / 120);
       t += dur;
     }
     keys.push({ t, x, y, deg });
@@ -159,6 +164,13 @@ export const PRESETS: Preset[] = [
     label: "S-shaped hallway",
     blurb: "Two bends, 70 cm wide",
     route: { kind: "s_route", width_cm: 70, legs: [["E", 300], ["S", 200], ["E", 300]] },
+    chair: "Quantum Q6 Edge 3 Stretto",
+  },
+  {
+    id: "driveway",
+    label: "Home driveway (van)",
+    blurb: "350 cm bay, side-ramp van",
+    route: { kind: "driveway", width_cm: 350 },
     chair: "Quantum Q6 Edge 3 Stretto",
   },
   {

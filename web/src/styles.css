@@ -133,6 +133,19 @@ button:focus-visible, input:focus-visible, select:focus-visible, .card:focus-vis
 .impact.delay { animation-delay: 0.6s; }
 @keyframes impact { from { transform: scale(0.4); opacity: 1; } to { transform: scale(2.4); opacity: 0; } }
 
+/* car mode: the van, its side ramp, and the marked access aisle */
+.van-body { fill: #e9eef3; stroke: #5b6672; stroke-width: 0.35; }
+.van-roof { fill: #d3dbe3; }
+.van-glass { fill: #26303a; opacity: 0.88; }
+.van-wheel { fill: #14181d; }
+.van-light { fill: #ffd76a; }
+.van-door { stroke: #5b6672; stroke-width: 0.45; stroke-dasharray: 1.2 0.6; }
+.van-glyph .chair-dir { stroke: #5b6672; }
+.ramp { fill: #9aa5b1; stroke: #5b6672; stroke-width: 0.3; }
+.ramp.bad { fill: var(--bad); fill-opacity: 0.75; stroke: var(--bad); }
+.aisle { stroke: var(--link); stroke-width: 0.4; fill-opacity: 1; }
+.aisle-hatch { stroke: var(--link); stroke-width: 0.5; opacity: 0.55; }
+
 /* floor-plan dimension lines */
 .dim line { stroke: var(--muted); stroke-width: 0.3; }
 .dim-head { fill: var(--muted); }

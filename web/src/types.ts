@@ -13,7 +13,7 @@ export interface Twin {
   start: Pose;
   goal: [number, number];
   wall_cols: number[];
-  kind?: "door" | "s_route" | "hammerhead";
+  kind?: "door" | "s_route" | "hammerhead" | "driveway";
   headings?: number; // 4 for doors (pivot model); 16 for routes (wheelchair kinematics)
   width_cm?: number;
   bar_cm?: number;
@@ -22,7 +22,21 @@ export interface Twin {
 
 export interface Scene {
   twin: Twin;
-  plan: { reached: boolean; poses: Pose[] };
+  plan: { reached: boolean; poses: Pose[] }; // driveway: the van's poses (rear axle)
+  vehicle?: Vehicle; // driveway only: the van that drives; the chair uses its ramp
+  ramp?: { strip: [number, number, number, number]; clear: boolean }; // cells x, y, w, h
+}
+
+export interface Vehicle {
+  name: string;
+  length_cm: number;
+  width_cm: number;
+  axle_offset_cm: number; // rear axle relative to the centre (negative = behind)
+  min_radius_cm: number;
+  ramp_length_cm: number;
+  ramp_width_cm: number;
+  wheelbase_cm: number;
+  caster_climb_mm: number;
 }
 
 export interface Card {
@@ -62,7 +76,7 @@ export interface ChairSpec {
 }
 
 export interface RouteSpec {
-  kind: "s_route" | "hammerhead";
+  kind: "s_route" | "hammerhead" | "driveway";
   width_cm: number;
   bar_cm?: number;
   legs?: [string, number][];
