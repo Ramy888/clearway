@@ -8,7 +8,8 @@ interface. Every deciding step is still the deterministic Auditor.
 from dataclasses import dataclass, field, replace
 from typing import Callable, List, Optional
 
-from .rules import CLEAR_WIDTH_MIN_MM, ROUTE_WIDTH_MIN_MM, T_SQUARE_MIN_MM, DoorSpec, RouteSpec, evaluate
+from .rules import (ACCESS_AISLE_MIN_MM, CLEAR_WIDTH_MIN_MM, ROUTE_WIDTH_MIN_MM, T_SQUARE_MIN_MM,
+                    VAN_SPACE_MIN_MM, DoorSpec, RouteSpec, evaluate)
 from .catalogue import FixOp
 from .twin import twin_for
 from .planner import Chair, analyze, drive
@@ -76,6 +77,12 @@ def _route_candidates(spec: RouteSpec, jam, chair: Chair) -> List[List[FixOp]]:
     The stub checks feasibility in the simulator, as a contractor would measure; the Auditor
     still re-checks both physics and code independently.
     """
+    if spec.kind == "driveway":
+        if jam.reason != "ramp":     # no catalogue fix widens a ramp or tightens a van's turn
+            return []
+        code = _up5(VAN_SPACE_MIN_MM + ACCESS_AISLE_MIN_MM)
+        cheapest = spec.width_cm + _up5((jam.required - jam.measured) * 10)   # what the jam measured
+        return [[FixOp("widen_bay", params={"target_cm": v})] for v in sorted({min(cheapest, code), code})]
     if spec.kind == "hammerhead" and jam.reason != "clear_width":
         field_name, fix, code = "bar_cm", "extend_turning_bar", _up5(T_SQUARE_MIN_MM)
     else:
@@ -97,6 +104,8 @@ def stub_maker(jam, chair: Chair, standard: str, history, spec=None) -> Optional
 
 def describe_spec(spec) -> str:
     if isinstance(spec, RouteSpec):
+        if spec.kind == "driveway":
+            return f"driveway bay {spec.width_cm} cm wide; side-entry ramp van"
         if spec.kind == "hammerhead":
             return f"hallway {spec.width_cm} cm wide ending in a T with a {spec.bar_cm} cm bar"
         return f"S-shaped hallway {spec.width_cm} cm wide"
@@ -113,7 +122,8 @@ def run(before, chair: Chair, standard: str = "ADA",
     maker_engine = getattr(maker, "engine", "model")
     ledger: List[Event] = []
     twin = twin_for(before)
-    pilot = "A* planner (code)" if twin.kind == "door" else "wheelchair kinematics (code)"
+    pilot = {"door": "A* planner (code)", "driveway": "van kinematics + ramp (code)"}.get(
+        twin.kind, "wheelchair kinematics (code)")
     ledger.append(Event("Surveyor", "load", True,
                         f"{chair.name} chair {chair.width_cm}x{chair.length_cm} cm; {describe_spec(before)}",
                         engine=CODE))

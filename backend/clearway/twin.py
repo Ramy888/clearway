@@ -32,7 +32,7 @@ class Twin:
     threshold_mm: int = 0            # height of that step
     headings: int = 4                # 4: door twins (90-degree pivots); 8: routes (45-degree steps + reverse)
     goal_heading: Optional[int] = None  # route turnarounds: arrive facing this way (in `headings` units)
-    kind: str = "door"               # "door" | "s_route" | "hammerhead"
+    kind: str = "door"               # "door" | "s_route" | "hammerhead" | "driveway"
     width_cm: int = 0                # routes: hallway clear width
     bar_cm: int = 0                  # hammerhead: length of the T's bar
 
@@ -155,16 +155,43 @@ def _hammerhead(spec: RouteSpec) -> Twin:
                         kind="hammerhead", width_cm=spec.width_cm, bar_cm=spec.bar_cm)
 
 
+PARK_OFFSET_CM = 30    # driveway: the van parks this far off the driver's-side wall
+_STREET_CELLS = 140    # 7 m residential street in front of the bay
+_BAY_DEPTH_CELLS = 120 # 6 m deep bay
+_LANE_FROM_CURB = 25   # the van swings wide: rear axle 125 cm off the far curb (a clean full-lock entry)
+
+
+def _driveway(spec: RouteSpec) -> Twin:
+    """A street with a perpendicular bay. The van drives along the street (east), turns into the bay
+    and parks nose-in (north), PARK_OFFSET_CM off the left wall, with 30 cm to spare at the front."""
+    from .kinematics import SIENNA      # lazy: kinematics imports this module
+    bw = _cells(spec.width_cm)
+    cells = {(x, y) for x in range(-200, bw + 120) for y in range(_STREET_CELLS)}           # the street
+    cells |= {(x, y) for x in range(bw) for y in range(-_BAY_DEPTH_CELLS, 0)}                 # the bay
+    d = SIENNA.axle_offset_cm / CELL_CM                                                      # axle behind centre
+    gx = round((PARK_OFFSET_CM + SIENNA.width_cm / 2) / CELL_CM)
+    gy = round(-_BAY_DEPTH_CELLS + (30 + SIENNA.length_cm / 2) / CELL_CM - d)
+    return _materialise(cells, start=(-160, _STREET_CELLS - _LANE_FROM_CURB, _HEADING["E"]), goal=(gx, gy),
+                        goal_heading=_HEADING["N"], kind="driveway", width_cm=spec.width_cm)
+
+
 @lru_cache(maxsize=128)
 def twin_for(spec) -> Twin:
     """The twin a spec describes: the single place that turns measurements into geometry."""
     if isinstance(spec, RouteSpec):
+        if spec.kind == "driveway":
+            return _driveway(spec)
         return _hammerhead(spec) if spec.kind == "hammerhead" else _s_route(spec)
     return two_room_template(door_cm=spec.clear_width_cm, threshold_mm=spec.threshold_mm)
 
 
 def validate_route(spec: RouteSpec) -> list:
     """Errors that make a route invalid (empty == valid). Routes may come from a model, so check."""
+    if spec.kind == "driveway":
+        errs = ["a driveway has no legs"] if spec.legs else []
+        if not 350 <= spec.width_cm <= 700:   # narrower bays need multi-point turns (not modelled)
+            errs.append(f"bay width {spec.width_cm} cm is outside 350-700 cm")
+        return errs
     if spec.kind == "hammerhead":
         errs = ["a hammerhead has no legs"] if spec.legs else []
         if spec.bar_cm < spec.width_cm:

@@ -205,6 +205,9 @@ def plan(twin: Twin, chair: Chair) -> Plan:
     Door twins (4 headings) use the pivot-in-place model below. Route twins need real turning
     and go to the wheelchair kinematics in kinematics.py.
     """
+    if twin.kind == "driveway":
+        from .kinematics import plan_driveway
+        return plan_driveway(twin, chair)
     if twin.headings != 4:
         from .kinematics import plan_route
         return plan_route(twin, chair)
@@ -270,7 +273,24 @@ def drive(twin: Twin, chair: Chair) -> bool:
     return plan(twin, chair).reached
 
 
+def _driveway_jam(twin: Twin, chair: Chair) -> Jam:
+    from .kinematics import SIENNA, van_plan
+    from .twin import PARK_OFFSET_CM
+    w = twin.width_cm
+    if not van_plan(twin).reached:
+        return Jam("turn_radius", w, 0, "cm", f"the van cannot turn into a {w} cm bay and park")
+    if chair.width_cm > SIENNA.ramp_width_cm:
+        return Jam("ramp_width", SIENNA.ramp_width_cm, chair.width_cm, "cm",
+                   f"the ramp is {SIENNA.ramp_width_cm} cm wide; the chair is {chair.width_cm} cm")
+    gap, need = w - PARK_OFFSET_CM - SIENNA.width_cm, SIENNA.ramp_length_cm + chair.length_cm
+    return Jam("ramp", gap, need, "cm",
+               f"ramp {SIENNA.ramp_length_cm} cm + chair {chair.length_cm} cm need {need} cm beside the van; "
+               f"the bay leaves {gap} cm")
+
+
 def _route_jam(twin: Twin, chair: Chair) -> Jam:
+    if twin.kind == "driveway":
+        return _driveway_jam(twin, chair)
     w = twin.width_cm
     if w < chair.width_cm:
         return Jam("clear_width", w, chair.width_cm, "cm",

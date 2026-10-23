@@ -151,12 +151,43 @@ def _primitives(ax: int, ay: int, h: int, n: int, body: _Body, radius: float, pi
                 yield (px, py, (h + turn) % n), cost
 
 
+VEHICLE_WEIGHT = 2.0   # cars: weighted A* finds A feasible path fast; parking needs no shortest one
+
+
+def _wall_distance(twin: Twin, goal) -> dict:
+    """Steps from every open cell to the goal, around walls (8-connected BFS): the Hybrid-A* guide."""
+    dist, frontier = {goal: 0}, [goal]
+    blocked, W, H = twin.blocked, twin.W, twin.H
+    while frontier:
+        nxt = []
+        for x, y in frontier:
+            d = dist[(x, y)] + 1
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    c = (x + dx, y + dy)
+                    if c not in dist and 0 <= c[0] < W and 0 <= c[1] < H and c not in blocked:
+                        dist[c] = d
+                        nxt.append(c)
+        frontier = nxt
+    return dist
+
+
 def plan_route(twin: Twin, chair) -> Plan:
     n = twin.headings
     body = _Body(_Grid(_effective_blocked(twin, chair), twin.W, twin.H), chair)
     k = arc_checks(chair, n)
     moves = (_arc_radius(chair), not isinstance(chair, Vehicle), tuple(i / k for i in range(1, k + 1)))
     start, (gx, gy), want_h = twin.start, twin.goal, twin.goal_heading
+    if isinstance(chair, Vehicle):    # chairs keep exact A*; a car's search needs the guide
+        guide, arc = _wall_distance(twin, (gx, gy)), chair.radius_cells * math.radians(360 / n)
+
+        def h(s):
+            dh = abs((s[2] - want_h + n // 2) % n - n // 2) if want_h is not None else 0
+            return VEHICLE_WEIGHT * (max(math.hypot(s[0] - gx, s[1] - gy),
+                                         guide.get((round(s[0]), round(s[1])), math.inf)) + dh * arc)
+    else:
+        def h(s):
+            return math.hypot(s[0] - gx, s[1] - gy)
     if not body.fits(start[0], start[1], start[2] * 360.0 / n):
         return Plan(False, [start])
     turnaround = want_h is not None and math.hypot(gx - start[0], gy - start[1]) <= 2
@@ -169,7 +200,7 @@ def plan_route(twin: Twin, chair) -> Plan:
             return (-math.hypot(s[0] - start[0], s[1] - start[1]), g)
         return (math.hypot(s[0] - gx, s[1] - gy), g)
 
-    openh = [(math.hypot(start[0] - gx, start[1] - gy), 0.0, start)]
+    openh = [(h(start), 0.0, start)]
     best, came = {start: 0.0}, {}
     closest = (progress(start, 0.0), start)
     expansions = 0
@@ -189,5 +220,38 @@ def plan_route(twin: Twin, chair) -> Plan:
             if ng < best.get(ns, math.inf):
                 best[ns] = ng
                 came[ns] = s
-                heapq.heappush(openh, (ng + math.hypot(ns[0] - gx, ns[1] - gy), ng, ns))
+                heapq.heappush(openh, (ng + h(ns), ng, ns))
     return Plan(False, _reconstruct(came, closest[1]))
+
+
+@lru_cache(maxsize=32)
+def van_plan(twin: Twin) -> Plan:
+    """The van's own drive into the bay; it does not depend on the chair, so it is planned once."""
+    return plan_route(twin, SIENNA)
+
+
+def ramp_strip(twin: Twin, chair, van: Vehicle = SIENNA):
+    """Cells (x0, y0, w, h) the deployed ramp needs on the passenger side of the parked van, plus the
+    chair's own length to roll clear of it. shortcut: door centred on the van, chair goes straight
+    off the ramp (its turn after that is not modelled)."""
+    a = math.radians(twin.goal_heading * 360.0 / twin.headings)
+    hx, hy = math.cos(a), math.sin(a)
+    d = van.axle_offset_cm / CELL_CM
+    cx, cy = twin.goal[0] - d * hx, twin.goal[1] - d * hy        # axle = centre + d * heading
+    rx, ry = -hy, hx                                             # passenger side (screen y points down)
+    near, far = van.width_cm / 2 / CELL_CM, (van.width_cm / 2 + van.ramp_length_cm + chair.length_cm) / CELL_CM
+    half = van.ramp_width_cm / 2 / CELL_CM
+    pts = [(cx + rx * t + hx * s, cy + ry * t + hy * s) for t in (near, far) for s in (-half, half)]
+    x0, y0 = math.floor(min(p[0] for p in pts) + 1e-9), math.floor(min(p[1] for p in pts) + 1e-9)
+    x1, y1 = math.ceil(max(p[0] for p in pts) - 1e-9), math.ceil(max(p[1] for p in pts) - 1e-9)
+    return x0, y0, x1 - x0, y1 - y0
+
+
+def ramp_clear(twin: Twin, chair, van: Vehicle = SIENNA) -> bool:
+    return chair.width_cm <= van.ramp_width_cm and _Grid(twin.blocked, twin.W, twin.H).free(*ramp_strip(twin, chair, van))
+
+
+def plan_driveway(twin: Twin, chair) -> Plan:
+    """Physics for car mode: the van parks, then the ramp deploys and the chair rolls off it."""
+    p = van_plan(twin)
+    return Plan(p.reached and ramp_clear(twin, chair), p.poses, p.exhausted)

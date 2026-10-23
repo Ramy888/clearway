@@ -40,6 +40,7 @@ def _reverse_swing(d, p, c):      return replace(d, turning_diameter_cm=(d.turni
 def _remove_wall_segment(d, p, c): return replace(d, turning_diameter_cm=160)
 def _widen_corridor(r, p, c):     return replace(r, width_cm=p["target_cm"])
 def _extend_turning_bar(r, p, c): return replace(r, bar_cm=p["target_cm"])
+def _widen_bay(r, p, c):          return replace(r, width_cm=p["target_cm"])
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,8 @@ CATALOGUE: Dict[str, FixDef] = {
     "extend_turning_bar": FixDef(_extend_turning_bar, params={"target_cm": (int, 60, 300)},
                                  cost_key="extend_turning_bar", rank=5,
                                  phrase="enlarge a hallway turning space", applies_to=("hammerhead",)),
+    "widen_bay":          FixDef(_widen_bay, params={"target_cm": (int, 350, 700)}, cost_key="widen_bay",
+                                 rank=4, phrase="widen a driveway parking pad", applies_to=("driveway",)),
 }
 
 

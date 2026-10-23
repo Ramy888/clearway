@@ -10,7 +10,7 @@ ranges when the fix catalogue needs them.
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-RULE_PACK_VERSION = "ada-2010+en17210.v2"
+RULE_PACK_VERSION = "ada-2010+en17210.v3"
 
 # Code minimums/maximums, in millimetres. ADA values checked against access-board.gov (2026-10-22).
 CLEAR_WIDTH_MIN_MM = {"ADA": 815, "EN17210": 850}   # ADA 404.2.3 / EN 17210
@@ -20,6 +20,10 @@ THRESHOLD_MAX_MM = 13                                # ADA 404.2.5
 TURNING_DIAMETER_MIN_MM = {"ADA": 1525, "EN17210": 1500}
 ROUTE_WIDTH_MIN_MM = 915      # ADA 403.5.1 walking surface; also the T's arms and base (304.3.2)
 T_SQUARE_MIN_MM = 1525        # ADA 304.3.2: the T-shaped space fits within a 60 in (1525 mm) square
+# ADA 502.2 van space 132 in (3350 mm) + 502.3.1 access aisle 60 in (1525 mm); the 502.2 exception
+# (2440 + 2440 mm) needs 5 mm more in total. Checked against access-board.gov (2026-10-23).
+VAN_SPACE_MIN_MM = 3350
+ACCESS_AISLE_MIN_MM = 1525
 
 _CLAUSE = {
     "ADA": {"clear_width": "ADA 404.2.3", "threshold": "ADA 404.2.5", "turning": "ADA 304.3.1"},
@@ -37,8 +41,8 @@ class DoorSpec:
 @dataclass(frozen=True)
 class RouteSpec:
     """A route the chair must travel: an S-shaped hallway, or a dead end with a T (hammerhead)."""
-    kind: str                                  # "s_route" | "hammerhead"
-    width_cm: int                              # clear width of the hallway (and of the T's arms and base)
+    kind: str                                  # "s_route" | "hammerhead" | "driveway"
+    width_cm: int                              # hallway clear width (and the T's arms); driveway: bay width
     bar_cm: int = 0                            # hammerhead: length of the T's bar
     legs: Tuple[Tuple[str, int], ...] = ()     # s_route: orthogonal legs, e.g. (("E", 300), ("S", 200))
 
@@ -55,6 +59,11 @@ class Finding:
 
 def _evaluate_route(route: RouteSpec) -> List[Finding]:
     w_mm = route.width_cm * 10
+    if route.kind == "driveway":
+        need = VAN_SPACE_MIN_MM + ACCESS_AISLE_MIN_MM
+        return [Finding("van_space", "ADA 502.2", w_mm >= need, w_mm, need,
+                        f"bay {w_mm} mm vs van space {VAN_SPACE_MIN_MM} mm + access aisle "
+                        f"{ACCESS_AISLE_MIN_MM} mm [502.3.1]")]
     clause = "ADA 304.3.2" if route.kind == "hammerhead" else "ADA 403.5.1"
     findings = [Finding("clear_width", clause, w_mm >= ROUTE_WIDTH_MIN_MM, w_mm, ROUTE_WIDTH_MIN_MM,
                         f"clear width {w_mm} mm vs minimum {ROUTE_WIDTH_MIN_MM} mm")]
