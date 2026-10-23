@@ -7,7 +7,8 @@
 CLEARWAY is an **accessibility** tool. A family adapting a home for a wheelchair user usually
 guesses: they pay for a fix, then find out whether the chair actually fits. CLEARWAY drives a
 simulated wheelchair through a digital twin of the home (doorways, S-shaped hallways, dead
-ends where it must turn around), shows exactly where it jams, and
+ends where it must turn around, and the driveway where a ramp van parks), shows exactly where it
+jams, and
 proposes the cheapest fix that two **independent** checkers cannot refuse: a physics re-drive
 of the chair, and a hard-coded accessibility standard (ADA 2010 / EN 17210). You approve what
 ships, and you get a contractor brief with cited prices.
@@ -74,6 +75,24 @@ Hallways work the same way with these chairs: the cheapest width the Q6 can use 
 ADA 403.5.1's 915 mm and is refused; for a dead end, the smallest T it can turn in (100 cm) is
 under 304.3.2's 1525 mm square and is refused.
 
+## Car mode: a side-entry ramp van at home
+
+The same engine drives a car. A **BraunAbility Toyota Sienna side-entry van** (5174 x 1994 mm,
+3061 mm wheelbase, 5.8 m turning radius; BraunAbility's 52 in in-floor ramp) turns from the street
+into a driveway bay, parks nose-in, and deploys its ramp; then the chair rolls off it.
+
+- **A car cannot pivot.** It is the same rigid footprint keyed on its rear axle, but it only drives
+  straight or along arcs of its minimum turning radius, checked often enough that the sliver missed
+  between checked poses stays under half a grid cell. Calibration (`test_car_kinematics.py`): a
+  ring track just wider than the closed-form swept annulus [R - W/2, sqrt((R + W/2)^2 + a^2)] is
+  driveable and a narrower one jams; the van never pivots; it cannot turn around where a chair can.
+- **It drives like a driver.** The planner first tries the direct manoeuvre (straight on, one
+  full-lock quarter turn, straight in) with the same moves and checks, as Hybrid A* does; only if
+  that does not fit does a guided search look for another way.
+- **Two checkers, again.** Physics: the ramp plus the chair's own length must fit beside the parked
+  van. Code: ADA 502.2 van space 3350 mm + 502.3.1 access aisle 1525 mm. A 350 cm bay jams the
+  ramp; the cheapest bay the Q6 can use (445 cm) is refused under ADA; 490 cm passes both.
+
 ## Run it
 
 ```bash
@@ -99,18 +118,23 @@ Container that keeps the daily cap in a Durable Object).
 
 These are known and deliberate for a hackathon build:
 
-- **The twin is 2D and comes from templates.** Five presets (three doorways, two hallways);
+- **The twin is 2D and comes from templates.** Six presets (three doorways, two hallways, a driveway);
   there is no floor-plan import or room editor yet. Hallways are made of straight legs with
   alternating 90-degree turns; U-turns (governed by ADA 403.5.2) are not modelled, and hallways
   are checked against ADA only.
+- **Car mode models one manoeuvre and one van.** Bays narrower than 350 cm would need a
+  multi-point turn and are refused at the input; the van parks 30 cm off the driver's wall; the
+  ramp door is taken as centred on the van and the chair's turn after the ramp is not modelled.
+  Where the Sienna's rear axle sits (110 cm from the rear bumper) is an estimate. ADA 502 governs
+  public parking; for a private driveway it is the reference the brief cites.
 - **Doorways use a simpler chair model** (a rectangle that pivots in 90-degree steps), which is
   enough for straight passage. Hallways use the kinematic model above.
 - **The kinematic chair is a rigid footprint on a 5 cm grid with 16 headings.** It can be up to one
   grid cell more pessimistic than reality, never more optimistic. Without a spec-sheet turning
   diameter its corners stay square, which overstates the space it needs to turn. Spec sheets do
   not publish where the drive axle sits; the R-TRAK's is an estimate.
-- **The rule pack is small**: door clear width, threshold height and turning diameter (ADA
-  404.2.3 / 404.2.5 / 304.3 and EN 17210 equivalents). It is guidance, not a compliance
+- **The rule pack is small**: door clear width, threshold height, turning diameter, hallway width and van parking (ADA
+  404.2.3 / 404.2.5 / 304.3 / 403.5.1 / 502 and EN 17210 for doors). It is guidance, not a compliance
   certificate.
 - **Fix effects are simplified** (for example, offset hinges add 5 cm). Load-bearing walls are
   never removed; that fix needs explicit permission and a professional.
