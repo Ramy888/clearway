@@ -112,8 +112,7 @@ rate-limited per client and capped per day before any model call.
 
 **Deploy:** the `Dockerfile` builds the UI and serves it from FastAPI. The live demo runs on
 Cloudflare (`deploy/cloudflare`): a Worker in front of a Cloudflare Container, with the live-run
-caps kept in a Durable Object so they survive the container sleeping. The same image also ran
-on CreateOS.
+caps kept in a Durable Object so they survive the container sleeping.
 
 ## Limitations
 
