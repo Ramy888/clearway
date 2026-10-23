@@ -31,7 +31,7 @@ def ring(van: Vehicle, inner_cells: float, outer_cells: float, quarter=1) -> Twi
     q = ROUTE_HEADINGS // 4
     start = (c + R, c, q)                                 # heading +y (index 4 of 16)
     # a left turn about the centre: after a quarter the axle is at (c, c + R) heading -x
-    ends = {1: ((c, c + R), 2 * q)}
+    ends = {1: ((c, c + R), 2 * q), 2: ((c - R, c), 3 * q)}
     goal, gh = ends[quarter]
     return Twin(blocked=blocked, W=W, H=H, start=start, goal=goal, door_cm=0,
                 headings=ROUTE_HEADINGS, goal_heading=gh, kind="ring")
@@ -64,6 +64,14 @@ class TestCarCalibration(unittest.TestCase):
         p = plan_route(ring(SIENNA, lo - 2, hi - 3), SIENNA)
         self.assertFalse(p.reached)
         self.assertFalse(p.exhausted, "a narrow ring must be decided, not run out of budget")
+
+    def test_the_search_itself_drives_a_half_ring_the_direct_manoeuvre_cannot(self):
+        lo, hi = swept(SIENNA)
+        p = plan_route(ring(SIENNA, lo - 2, hi + 2, quarter=2), SIENNA)
+        self.assertTrue(p.reached)
+        for (x0, y0, h0), (x1, y1, h1) in zip(p.poses, p.poses[1:]):
+            self.assertFalse((x0, y0) == (x1, y1) and h0 != h1, f"pivot at {(x0, y0)}")
+        self.assertFalse(plan_route(ring(SIENNA, lo - 2, hi - 3, quarter=2), SIENNA).reached)
 
     def test_a_van_never_pivots_on_the_spot(self):
         lo, hi = swept(SIENNA)
