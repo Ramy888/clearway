@@ -4,6 +4,7 @@
 // container sleeping (the server's own in-memory count does not).
 import { Container, getContainer } from "@cloudflare/containers";
 import { type Caps, release, remaining, reserve } from "./budget";
+import { type Mode, modeFor, needsRestart } from "./config";
 import { decodedPath, isSpendRoute, parseBody, spendsCredit } from "./routes";
 
 interface Env {
@@ -31,7 +32,7 @@ export class Clearway extends Container<Env> {
     super(ctx, env);
     this.envVars = {
       // live mode only when both keys are configured; otherwise the demo runs offline (free)
-      CLEARWAY_ALLOW_LIVE: env.NEBIUS_API_KEY && env.TAVILY_API_KEY ? "1" : "",
+      CLEARWAY_ALLOW_LIVE: modeFor(env) === "live" ? "1" : "",
       // the Worker sets X-Forwarded-For to the visitor's address, so per-visitor limits work
       CLEARWAY_TRUST_PROXY: "1",
       CLEARWAY_LIVE_RUNS_PER_DAY: String(caps(env).perDay),
@@ -40,11 +41,19 @@ export class Clearway extends Container<Env> {
     };
   }
 
+  override async onStart(): Promise<void> {
+    await this.ctx.storage.put("startedAs", modeFor(this.env));
+  }
+
   override async fetch(req: Request): Promise<Response> {
     const path = decodedPath(new URL(req.url).pathname);
     if (path === null) return json({ detail: "malformed path" }, 400);
     const store = this.ctx.storage;
     const now = new Date();
+    const running = Boolean(this.ctx.container?.running);
+    if (needsRestart(running, await store.get<Mode>("startedAs"), modeFor(this.env))) {
+      await this.destroy(); // the request below starts it again with the current settings
+    }
 
     if (isSpendRoute(req.method, path)) {
       const body = parseBody(await req.clone().text());
@@ -68,8 +77,10 @@ export class Clearway extends Container<Env> {
     if (req.method === "GET" && path === "/api/health") {
       const res = await super.fetch(req);
       if (!res.ok) return res;
-      const info = (await res.json()) as { live?: boolean; live_runs_left_today?: number };
+      const info = (await res.json()) as { live?: boolean; live_runs_left_today?: number; host?: unknown };
       if (info.live) info.live_runs_left_today = await remaining(store, caps(this.env), now);
+      // what the Worker sees vs. what the running container started with (no secret values)
+      info.host = { configured: modeFor(this.env), started_as: (await store.get<Mode>("startedAs")) ?? null };
       return json(info);
     }
 
