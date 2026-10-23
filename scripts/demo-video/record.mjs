@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const URL_ = process.env.DEMO_URL ?? "http://127.0.0.1:8000/";
 const DIR = fileURLToPath(new URL("./out/", import.meta.url));
-rmSync(DIR, { recursive: true, force: true });
+rmSync(DIR + "frames", { recursive: true, force: true });   // only the frames: finished videos stay
 mkdirSync(DIR + "frames", { recursive: true });
 
 const W = 1440, H = 900;
@@ -49,10 +49,11 @@ const waitFor = async (expr, maxMs = 90_000) => {
   throw new Error("timed out waiting for: " + expr);
 };
 const idle = `![...document.querySelectorAll('button.primary')].some(e => e.textContent.includes('Driving'))`;
-const animated = `!(document.querySelector('figcaption.status')?.textContent || 'Driving').includes('Driving')`;
+const animated = `!/Driving|Parking/.test(document.querySelector('figcaption.status')?.textContent || 'Driving')`;
 // press "Test-drive", wait for the answer (cutting the wait when it is a live model call), then the drive
 async function testDrive({ live = false } = {}) {
   await press("Test-drive this home");
+  await scrollTo(0);   // the button can sit below the fold; the drive happens at the top
   if (live) { b.pause(); await waitFor(idle); await b.resume(); } else await waitFor(idle);
   await sleep(300); await waitFor(animated);
 }
@@ -125,10 +126,18 @@ await press("Dead-end hallway"); await sleep(1500);
 await testDrive();
 await hover(700, 300); await sleep(2500);
 cue("A 100 cm turning space would do for this chair, but ADA asks for 1525 mm: refused");
-await scrollToEl(".ev.refuse", "", 220, 1500); await hover(1200, 330); await sleep(4000);
-await scrollTo(0); await sleep(1200);
+await hover(1250, 170); await sleep(7000);
 cue("With a code-size T it turns around and drives back out");
-await afterFix(); await sleep(2500);
+await afterFix(); await sleep(1500);
+
+// 5b. Car mode: a side-entry ramp van at home (the same engine drives a car)
+cue("Car mode: a side-entry ramp van parks at home, with real car steering");
+await press("Home driveway"); await sleep(1200);
+await testDrive();
+cue("In a 350 cm bay its ramp hits the wall; 445 cm would fit, but ADA asks for 4875 mm: refused");
+await hover(700, 250); await sleep(7600);
+cue("At 490 cm the aisle is marked, the ramp deploys and the chair rolls off");
+await afterFix(); await sleep(1500);
 
 // 6. Close
 cue("The model proposes. Code decides. An independent auditor can say no. You approve.");
