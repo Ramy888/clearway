@@ -39,7 +39,12 @@ def plan_to_dict(p: Plan) -> dict:
 
 def _scene(spec, chair: Chair) -> dict:
     t = twin_for(spec)
-    return {"twin": twin_to_dict(t), "plan": plan_to_dict(plan(t, chair))}
+    scene = {"twin": twin_to_dict(t), "plan": plan_to_dict(plan(t, chair))}
+    if t.kind == "driveway":   # the van drives (its poses are the plan); the chair uses the ramp
+        from .kinematics import SIENNA, ramp_clear, ramp_strip
+        scene["vehicle"] = asdict(SIENNA)
+        scene["ramp"] = {"strip": list(ramp_strip(t, chair)), "clear": ramp_clear(t, chair)}
+    return scene
 
 
 def event_to_dict(e) -> dict:

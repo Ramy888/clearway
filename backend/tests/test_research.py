@@ -85,6 +85,25 @@ class TestCards(unittest.TestCase):
         self.assertIsNone(c.price_range)
         self.assertIsNone(price_card("widen_frame", post=fake_post([junk])))
 
+    def test_a_driveway_job_needs_a_driveway_source_not_a_door_one(self):
+        door = {"title": "Widening a doorway", "url": "https://door.example",
+                "content": "Widening a door frame costs $600 to $2,000."}
+        pad = {"title": "Concrete driveway extension cost", "url": "https://pad.example",
+               "content": "Widening a concrete driveway typically costs $1,500 to $4,000."}
+        c = price_card("widen_bay", post=fake_post([door, pad]))
+        self.assertEqual((c.url, c.price_range), ("https://pad.example", "$1,500 to $4,000"))
+        self.assertIsNone(price_card("widen_bay", post=fake_post([door])))
+
+    def test_clause_search_names_the_right_topic(self):
+        seen = []
+        def post(payload, key):
+            seen.append(payload["query"])
+            return {"results": ADA}
+        clause_card("ADA 502.2", post=post)
+        clause_card("ADA 404.2.3", post=post)
+        self.assertIn("parking", seen[0])
+        self.assertIn("door", seen[1])
+
     def test_missing_key_raises(self):
         with mock.patch.dict(os.environ, {"TAVILY_API_KEY": ""}):
             with self.assertRaises(ResearchError):

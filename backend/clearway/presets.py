@@ -17,6 +17,7 @@ R_TRAK = Chair(61, 88, name="Pride R-TRAK", axle_offset_cm=-20, turning_diameter
 ROUTES = {
     "s_hallway": RouteSpec("s_route", 70, legs=(("E", 300), ("S", 200), ("E", 300))),
     "dead_end": RouteSpec("hammerhead", 95, bar_cm=95),
+    "driveway": RouteSpec("driveway", 350),   # car mode: a side-entry ramp van parks at home
 }
 
 

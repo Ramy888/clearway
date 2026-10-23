@@ -81,8 +81,8 @@ class ChairIn(BaseModel):
 
 
 class RouteIn(BaseModel):
-    kind: Literal["s_route", "hammerhead"]
-    width_cm: int = Field(..., ge=40, le=200)
+    kind: Literal["s_route", "hammerhead", "driveway"]
+    width_cm: int = Field(..., ge=40, le=700)   # per-kind ranges: validate_route
     bar_cm: int = Field(0, ge=0, le=300)
     legs: List[Tuple[str, int]] = Field(default_factory=list, max_length=12)
 

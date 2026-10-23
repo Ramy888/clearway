@@ -103,17 +103,19 @@ def _first(results: List[dict]) -> dict:
 
 
 def clause_card(clause: str, *, post: Optional[Callable] = None) -> Card:
-    r = _first(search(f"{clause} accessible door requirement text", post=post))
+    topic = "accessible parking" if clause.startswith("ADA 502") else "accessible door"
+    r = _first(search(f"{clause} {topic} requirement text", post=post))
     return Card("clause", clause, r["title"], r["url"], r["content"][:280])
 
 
-# A source must be about doors/walls at all before we quote a number from it.
+# A source must be about the job at all before we quote a number from it: doors/walls by default.
 _DOMAIN = re.compile(r"\b(?:door|doors|doorway|doorways|hinge|hinges|threshold|thresholds"
                      r"|wall|walls|frame|frames)\b", re.I)
+_DOMAIN_FOR = {"widen_bay": re.compile(r"\b(?:driveway|driveways|parking|carport|concrete)\b", re.I)}
 
 
-def _relevant(r: dict) -> bool:
-    return bool(_DOMAIN.search(f"{r['title']} {r['content']}"))
+def _relevant(r: dict, fix_id: str = "") -> bool:
+    return bool(_DOMAIN_FOR.get(fix_id, _DOMAIN).search(f"{r['title']} {r['content']}"))
 
 
 def price_card(fix_id: str, region: str = "Cairo, Egypt", *,
@@ -122,7 +124,7 @@ def price_card(fix_id: str, region: str = "Cairo, Egypt", *,
     fix = CATALOGUE.get(fix_id)
     phrase = fix.phrase if fix and fix.phrase else fix_id.replace("_", " ")
     results = [r for r in search(f"cost to {phrase} for wheelchair access {region}", post=post)
-               if _relevant(r)]
+               if _relevant(r, fix_id)]
     if not results:
         return None
     for r in results:  # prefer a source that actually states a price

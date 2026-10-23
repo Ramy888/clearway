@@ -192,6 +192,8 @@ def validate_route(spec: RouteSpec) -> list:
         if not 350 <= spec.width_cm <= 700:   # narrower bays need multi-point turns (not modelled)
             errs.append(f"bay width {spec.width_cm} cm is outside 350-700 cm")
         return errs
+    if spec.kind in ("s_route", "hammerhead") and not 40 <= spec.width_cm <= 200:
+        return [f"hallway width {spec.width_cm} cm is outside 40-200 cm"]
     if spec.kind == "hammerhead":
         errs = ["a hammerhead has no legs"] if spec.legs else []
         if spec.bar_cm < spec.width_cm:

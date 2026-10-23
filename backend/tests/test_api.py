@@ -149,6 +149,14 @@ class TestApi(unittest.TestCase):
         for route in bad:
             self.assertEqual(self.client.post("/api/run", json={"route": route}).status_code, 422, route)
 
+    def test_driveway_run_and_its_boundaries(self):
+        r = self.client.post("/api/run", json={"route": {"kind": "driveway", "width_cm": 350}, "chair": self.Q6})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["verdict"]["accepted_fix"][0]["params"], {"target_cm": 490})
+        for route in ({"kind": "driveway", "width_cm": 300},                  # needs a multi-point turn
+                      {"kind": "s_route", "width_cm": 300, "legs": [["E", 300]]}):   # hallways stay <= 200
+            self.assertEqual(self.client.post("/api/run", json={"route": route}).status_code, 422, route)
+
     def test_routes_are_ada_only(self):
         r = self.client.post("/api/run", json={"route": self.S70, "standard": "EN17210"})
         self.assertEqual(r.status_code, 422)

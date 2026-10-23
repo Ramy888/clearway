@@ -4,7 +4,8 @@ import unittest
 
 from clearway.twin import two_room_template
 from clearway.planner import Chair
-from clearway.rules import DoorSpec
+from clearway.rules import DoorSpec, RouteSpec
+from clearway.presets import Q6
 from clearway.orchestrator import run
 from clearway.serialize import twin_to_dict, run_to_dict
 
@@ -33,6 +34,16 @@ class TestSerialize(unittest.TestCase):
         d = run_to_dict(r, Chair(70, 110))
         self.assertIsNone(d["after"])
         self.assertTrue(d["verdict"]["escalated"])
+
+    def test_driveway_scene_carries_the_van_and_its_ramp(self):
+        d = json.loads(json.dumps(run_to_dict(run(RouteSpec("driveway", 350), Q6), Q6)))
+        before, after = d["before"], d["after"]
+        self.assertEqual(before["vehicle"]["length_cm"], 517)
+        self.assertEqual(before["vehicle"]["ramp_length_cm"], 132)
+        self.assertFalse(before["ramp"]["clear"])
+        self.assertTrue(after["ramp"]["clear"])
+        self.assertEqual(len(after["ramp"]["strip"]), 4)
+        self.assertNotIn("vehicle", run_to_dict(run(DoorSpec(clear_width_cm=65), Q6), Q6)["before"])
 
 
 if __name__ == "__main__":
