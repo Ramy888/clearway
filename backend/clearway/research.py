@@ -111,7 +111,8 @@ def clause_card(clause: str, *, post: Optional[Callable] = None) -> Card:
 # A source must be about the job at all before we quote a number from it: doors/walls by default.
 _DOMAIN = re.compile(r"\b(?:door|doors|doorway|doorways|hinge|hinges|threshold|thresholds"
                      r"|wall|walls|frame|frames)\b", re.I)
-_DOMAIN_FOR = {"widen_bay": re.compile(r"\b(?:driveway|driveways|parking|carport|concrete)\b", re.I)}
+# a bay price must come from a page about driveways themselves ("concrete" alone matched a ramp page)
+_DOMAIN_FOR = {"widen_bay": re.compile(r"\b(?:driveway|driveways)\b", re.I)}
 
 
 def _relevant(r: dict, fix_id: str = "") -> bool:

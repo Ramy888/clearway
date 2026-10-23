@@ -13,9 +13,11 @@ from .catalogue import CATALOGUE, FixOp, spec_kind
 from . import llm as _llm
 
 SYSTEM = (
-    "You are the Builder agent in CLEARWAY, a home-accessibility planner. A wheelchair "
-    "jammed on its route. Propose the SINGLE cheapest fix from the catalogue below that "
-    "you believe lets this chair through AND meets the building code. You may not invent "
+    "You are the Builder agent in CLEARWAY, a home-accessibility planner. A home failed a "
+    "wheelchair test-drive: the chair jammed at a doorway or in a hallway, or, on a driveway, "
+    "the side ramp of the user's van had no room to deploy. Propose the SINGLE cheapest fix "
+    "from the catalogue below that you believe makes the test pass AND meets the building "
+    "code. Decide quickly; the catalogue is short. You may not invent "
     "fixes, measurements, or parameters outside the listed ranges. An independent "
     "Auditor re-checks everything you propose and refuses fixes that fail.\n"
     'Answer with ONLY a JSON object: {"ops":[{"fix_id":"<id>","params":{...}}]}'
@@ -89,7 +91,7 @@ def make_llm_maker(chat: Optional[Callable] = None, tier: str = "super",
 
     def maker(jam, chair, standard, history, spec=None):
         content, _ = chat(tier, build_messages(jam, chair, standard, history, context, spec),
-                          max_tokens=2048)
+                          max_tokens=4096)   # Nemotron reasons first; 2048 once ran out on a driveway
         return parse_ops(content)
     maker.engine = f"{_llm.DISPLAY[tier]} · Nebius Token Factory"
     return maker

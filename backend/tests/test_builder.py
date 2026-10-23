@@ -57,6 +57,27 @@ class TestMaker(unittest.TestCase):
         self.assertIn("815", prompt)
 
 
+    def test_a_driveway_is_framed_as_the_van_ramp_and_given_room_to_reason(self):
+        # Seen live: on a driveway, Super spent all 2048 tokens reasoning and answered nothing.
+        from clearway.planner import analyze
+        from clearway.presets import Q6
+        from clearway.rules import RouteSpec
+        from clearway.twin import twin_for
+        calls = []
+
+        def chat(tier, messages, **kw):
+            calls.append((messages, kw))
+            return '{"ops":[{"fix_id":"widen_bay","params":{"target_cm":490}}]}', {}
+        spec = RouteSpec("driveway", 350)
+        ops = make_llm_maker(chat=chat)(analyze(twin_for(spec), Q6), Q6, "ADA", [], spec)
+        self.assertEqual(ops, [FixOp("widen_bay", params={"target_cm": 490})])
+        messages, kw = calls[0]
+        self.assertGreaterEqual(kw["max_tokens"], 4096)
+        self.assertIn("ramp", messages[0]["content"].lower())      # the system prompt covers this case
+        self.assertIn("widen_bay", messages[1]["content"])
+        self.assertNotIn("widen_frame", messages[1]["content"])    # only fixes for this kind of space
+
+
 class TestBoundaryHoldsAgainstTheModel(unittest.TestCase):
     def test_invented_fix_is_refused_then_real_fix_accepted(self):
         maker = make_llm_maker(chat=fake_chat([

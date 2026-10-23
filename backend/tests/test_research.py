@@ -93,6 +93,12 @@ class TestCards(unittest.TestCase):
         c = price_card("widen_bay", post=fake_post([door, pad]))
         self.assertEqual((c.url, c.price_range), ("https://pad.example", "$1,500 to $4,000"))
         self.assertIsNone(price_card("widen_bay", post=fake_post([door])))
+        # Seen live: a wheelchair-ramp price page was quoted for widening the driveway.
+        ramp = {"title": "Wheelchair Ramp Pricing in 2026 | Lifeway Mobility",
+                "url": "https://www.lifewaymobility.com/resources/product-guides/how-much-does-a-wheelchair-ramp-cost",
+                "content": "The cost of a residential aluminum wheelchair ramp starts at about $1,000 and can exceed "
+                           "$10,000. One can expect to pay between $2,000 to $10,000 for a concrete or wooden ramp."}
+        self.assertIsNone(price_card("widen_bay", post=fake_post([ramp])))
 
     def test_clause_search_names_the_right_topic(self):
         seen = []
